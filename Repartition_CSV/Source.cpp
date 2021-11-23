@@ -238,7 +238,9 @@ void vm::setID_service(string VMID_service)
 
 
             } while (mysql_num_rows(rID_service) != 0); //Tant que le client n'existe pas
-        }        
+        }    
+        
+        mysql_close(&connexion); //fermeture connection
     }
     else //Erreur connexion
     {
@@ -339,6 +341,8 @@ void vm::setM_OS(std::string VMM_OS)
             } while (mysql_num_rows(rOS) != 0); //Jusqu'à ce que la métrique existe
         }
         VMM_OS = OS;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else //Erreur Connexion
     {
@@ -418,6 +422,8 @@ void vm::setM_SLA(std::string VMM_SLA)
             } while (mysql_num_rows(rSLA) != 0); //Jusqu'à ce que la métrique existe
         }
         VMM_SLA = SLA;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else //Erreur Connexion
     {
@@ -516,6 +522,8 @@ void vm::setM_HWVersion(std::string VMM_HWVersion)
             } while (mysql_num_rows(rHWVersion) != 0); //Jusqu'à ce que la métrique existe
         }
         VMM_HWVersion = HWVersion;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -539,7 +547,7 @@ void vm::UP()
         char qvm[500] = "";
         
         //Vérification de l'existence de la vm
-        sprintf(qvm, "SELECT ID_vm FROM vm WHERE ID_service = '%s' AND UUID = '%s' AND UID = '%s';", ID_service.c_str(), UUID.c_str(), UID.c_str());
+        sprintf(qvm, "SELECT ID_vm FROM vm WHERE ID_service = '%s' AND UID = '%s' AND vmName = '%s';", ID_service.c_str(), UID.c_str(), vmName.c_str());
                 
         mysql_query(&connexion, qvm);
 
@@ -712,6 +720,8 @@ void vm::UP()
 
             mysql_query(&connexion, qUPDATE);
         }
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -899,6 +909,8 @@ void report::UP()
                 ID_report = id_report;
             }
         }
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -988,6 +1000,8 @@ void disk::setcapacity_disk(std::string diskcapacity_disk)
             }
         }
         M_unit = unit;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1068,6 +1082,8 @@ void disk::setM_type_disk(std::string diskM_type_disk)
             } while (mysql_num_rows(rtype_disk) != 0); //Jusqu'à ce que la métrique existe
         }
         diskM_type_disk = type_disk;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1134,6 +1150,8 @@ void disk::UP()
 
             } while (mysql_num_rows(rdisk) != 0); //Jusqu'à ce que le disk existe
         }
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1218,6 +1236,8 @@ void ram::setcapacity_ram(std::string ramcapacity_ram)
             }
         }
         M_unit = unit;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1284,6 +1304,8 @@ void ram::UP()
 
             } while (mysql_num_rows(rram) != 0); //Jusqu'à ce que la ram existe
         }
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1381,8 +1403,9 @@ void cpu::setM_model_cpu(std::string cpuM_model_cpu)
                 }
             } while (mysql_num_rows(rmodel_cpu) != 0); //Jusqu'à ce que la métrique existe
         }
-
         cpuM_model_cpu = model_cpu;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1449,6 +1472,8 @@ void cpu::UP()
 
             } while (mysql_num_rows(rcpu) != 0); //Jusqu'à ce que le cpu existe
         }
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1543,6 +1568,8 @@ void backup::setM_type_backup(std::string backupM_type_backup)
             } while (mysql_num_rows(rtype_backup) != 0); //Jusqu'à ce que la métrique existe
         }
         backupM_type_backup = type_backup;
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1609,6 +1636,8 @@ void backup::UP()
 
             } while (mysql_num_rows(rbackup) != 0); //Jusqu'à ce que la backup existe
         }
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {
@@ -1716,7 +1745,9 @@ void network::UP()
 
                 } while (mysql_num_rows(rnetwork) != 0); //Tant que que le network n'existe pas
             }
-        }        
+        }  
+
+        mysql_close(&connexion); //fermeture connection
     }
     else
     {

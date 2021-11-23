@@ -6,8 +6,9 @@ int main()
 {
     DIR* rep;
     struct dirent* fichierLu = NULL;
+    const char* chemin = "C:\\Users\\m.brioude\\OneDrive - QUADRIA\\Documents\\QUADRIA\\Tâches\\En cour\\Interface CSV\\CSV client 37";
 
-    rep = opendir("C:\\Users\\m.brioude\\OneDrive - QUADRIA\\Documents\\QUADRIA\\Tâches\\En cour\\Interface CSV\\CSV client 37");
+    rep = opendir(chemin);
 
     //ouverture du repertoire
 
@@ -16,11 +17,11 @@ int main()
 
     while ((fichierLu = readdir(rep)) != NULL)
     {
-        if (fichierLu->d_name != "." || fichierLu->d_name != "..")
-        {
-            string name = fichierLu->d_name;
+            cout << "Traitement du fichier " << fichierLu->d_name << "...  ";
 
-            cout << "Traitement du fichier " << name << "...  ";
+            char name[500] = "";
+
+            sprintf (name, "%s\\%s", chemin, fichierLu->d_name);
 
             ifstream data(name);
 
@@ -46,14 +47,12 @@ int main()
                         insertion(Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork);
                     }
                 }
-
                 cout << "Done" << endl;
             }
             else
             {
                 cout << "Error" << endl;
             }
-        }        
     }
 
     if (closedir(rep) == -1) //fermeture du repertoire

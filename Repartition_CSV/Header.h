@@ -11,6 +11,7 @@
 #include <sstream>
 #include <fstream>
 #include <cstdlib>
+#include <cstdio>
 #include <atlbase.h>
 #include <regex>
 #include <dirent.h>
