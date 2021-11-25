@@ -238,16 +238,16 @@ void vm::setID_service(string VMID_service)
 
 
             } while (mysql_num_rows(rID_service) != 0); //Tant que le client n'existe pas
-        }    
-        
-        mysql_close(&connexion); //fermeture connection
+        }
     }
     else //Erreur connexion
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
     
     ID_service = VMID_service;
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void vm::setUUID(std::string VMUUID)
@@ -341,15 +341,15 @@ void vm::setM_OS(std::string VMM_OS)
             } while (mysql_num_rows(rOS) != 0); //Jusqu'à ce que la métrique existe
         }
         VMM_OS = OS;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else //Erreur Connexion
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     M_OS = VMM_OS;
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void vm::setM_SLA(std::string VMM_SLA)
@@ -422,15 +422,15 @@ void vm::setM_SLA(std::string VMM_SLA)
             } while (mysql_num_rows(rSLA) != 0); //Jusqu'à ce que la métrique existe
         }
         VMM_SLA = SLA;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else //Erreur Connexion
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     M_SLA = VMM_SLA;
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void vm::setguestOSCustomization(std::string VMguestOSCustomization)
@@ -522,15 +522,15 @@ void vm::setM_HWVersion(std::string VMM_HWVersion)
             } while (mysql_num_rows(rHWVersion) != 0); //Jusqu'à ce que la métrique existe
         }
         VMM_HWVersion = HWVersion;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     M_HWVersion = VMM_HWVersion;
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void vm::UP()
@@ -720,13 +720,13 @@ void vm::UP()
 
             mysql_query(&connexion, qUPDATE);
         }
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 string vm::getID_vm()
@@ -909,13 +909,13 @@ void report::UP()
                 ID_report = id_report;
             }
         }
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 string report::getID_report()
@@ -1000,15 +1000,15 @@ void disk::setcapacity_disk(std::string diskcapacity_disk)
             }
         }
         M_unit = unit;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     capacity_disk = to_string(capacity);
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void disk::setM_type_disk(std::string diskM_type_disk)
@@ -1082,15 +1082,15 @@ void disk::setM_type_disk(std::string diskM_type_disk)
             } while (mysql_num_rows(rtype_disk) != 0); //Jusqu'à ce que la métrique existe
         }
         diskM_type_disk = type_disk;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     M_type_disk = diskM_type_disk;
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void disk::UP()
@@ -1105,7 +1105,7 @@ void disk::UP()
         char qdisk[500] = "";
 
         //Vérification de l'existence du disk
-        sprintf(qdisk, "SELECT ID_disk FROM disk WHERE ID_report = '%s' AND capacity_disk = '%s' AND M_type_disk = '%s' AND M_unit = '%s';", ID_report.c_str(), capacity_disk.c_str(), M_type_disk.c_str(), M_unit.c_str());
+        sprintf(qdisk, "SELECT ID_disk FROM disk WHERE ID_report = '%s' AND capacity_disk = '%s' AND M_type_disk = '%s' AND M_unit = '%s'; ", ID_report.c_str(), capacity_disk.c_str(), M_type_disk.c_str(), M_unit.c_str());
 
         mysql_query(&connexion, qdisk);
 
@@ -1150,13 +1150,13 @@ void disk::UP()
 
             } while (mysql_num_rows(rdisk) != 0); //Jusqu'à ce que le disk existe
         }
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 
@@ -1236,15 +1236,15 @@ void ram::setcapacity_ram(std::string ramcapacity_ram)
             }
         }
         M_unit = unit;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     capacity_ram = to_string(capacity);
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void ram::UP()
@@ -1304,13 +1304,13 @@ void ram::UP()
 
             } while (mysql_num_rows(rram) != 0); //Jusqu'à ce que la ram existe
         }
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 
@@ -1404,15 +1404,15 @@ void cpu::setM_model_cpu(std::string cpuM_model_cpu)
             } while (mysql_num_rows(rmodel_cpu) != 0); //Jusqu'à ce que la métrique existe
         }
         cpuM_model_cpu = model_cpu;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     M_model_cpu = cpuM_model_cpu;
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void cpu::UP()
@@ -1472,13 +1472,13 @@ void cpu::UP()
 
             } while (mysql_num_rows(rcpu) != 0); //Jusqu'à ce que le cpu existe
         }
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 
@@ -1568,15 +1568,15 @@ void backup::setM_type_backup(std::string backupM_type_backup)
             } while (mysql_num_rows(rtype_backup) != 0); //Jusqu'à ce que la métrique existe
         }
         backupM_type_backup = type_backup;
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
     M_type_backup = backupM_type_backup;
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 void backup::UP()
@@ -1636,13 +1636,13 @@ void backup::UP()
 
             } while (mysql_num_rows(rbackup) != 0); //Jusqu'à ce que la backup existe
         }
-
-        mysql_close(&connexion); //fermeture connection
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
 }
 
 
@@ -1695,7 +1695,9 @@ void network::UP()
             }
         }
 
-        for (int j = 0 ; j < tabMAC.size() ; j++)
+        int tailletab = tabMAC.size();
+
+        for (int j = 0 ; j < tailletab; j++)
         {
             char network[300] = "";
             char qnetwork[500] = "";
@@ -1745,12 +1747,12 @@ void network::UP()
 
                 } while (mysql_num_rows(rnetwork) != 0); //Tant que que le network n'existe pas
             }
-        }  
-
-        mysql_close(&connexion); //fermeture connection
+        }
     }
     else
     {
-        cout << "Erreur de connexion à la base de données.\n";
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
 }
