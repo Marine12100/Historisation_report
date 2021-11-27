@@ -2,7 +2,87 @@
 
 using namespace std;
 
-std::vector<std::string> creation(std::string line)
+void exploration(const char* chemin)
+{
+    char chaine[4096];
+
+    DIR* rep = opendir(chemin);
+    struct dirent* fichierLu = NULL;
+
+    //ouverture du repertoire
+
+    if (rep != NULL)
+    {
+        while ((fichierLu = readdir(rep)) != NULL) //jusqu'à la fin du dossier
+        {
+            if (fichierLu != NULL)
+            {
+                if (fichierLu->d_type == DT_DIR) // si le fichier parcouru est un repertoire
+                {
+                    if (strcmp(fichierLu->d_name, ".") != 0 && strcmp(fichierLu->d_name, "..") != 0)
+                    {
+                        strcpy(chaine, chemin);
+                        strcat(chaine, "/");
+                        strcat(chaine, fichierLu->d_name);
+
+                        exploration(chaine);
+                    }
+                }
+                else // si le fichier parcouru n'est pas un repertoire
+                {
+                    if ((strstr(fichierLu->d_name, "VCloud_Report")) != NULL && (strstr(fichierLu->d_name, ".csv")) != NULL) // verifier que c'est un rapport
+                    {
+                        cout << "Traitement du fichier " << fichierLu->d_name << "...  ";
+
+                        char name[500] = "";
+
+                        sprintf(name, "%s\\%s", chemin, fichierLu->d_name);
+
+                        ifstream data(name); // ouverture csv
+
+                        if (data.is_open())
+                        {
+                            string line = "";
+
+                            while (getline(data, line)) // acquisition d'une ligne
+                            {
+                                vm Lvm;
+                                report Lreport;
+                                disk Ldisk;
+                                ram Lram;
+                                cpu Lcpu;
+                                backup Lbackup;
+                                network Lnetwork;
+
+                                vector <string> tableau = creation(line);
+
+                                if (tableau[0] != "UUID" && tableau[1] != "UID") // verifier que ce n'est pas une ligne d'en-tete
+                                {
+                                    repartition(tableau, Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // repartir les cellules
+                                    insertion(Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // inserer les objets dans la bdd
+                                }
+                            }
+                            cout << "Done" << endl;
+                        }
+                        else
+                        {
+                            cout << "Erreur d'ouverture du document" << endl;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        perror(""); //message d'erreur
+    }
+
+    if (closedir(rep) == -1) //fermeture du repertoire
+        exit(-1);
+}
+
+vector<string> creation(string line)
 {
     vector <string> tableau;
     stringstream lineStream(line);
@@ -20,16 +100,38 @@ std::vector<std::string> creation(std::string line)
 
         do
         {
+            /***** RECHERCHE ADRESSE MAC *****/
+
             //expression régulière d'une adresse MAC
-            regex rgx("(([0-9A-Fa-f]{2}[:]){5}[0-9A-Fa-f]{2})");
+            regex rgxMAC("(([0-9A-Fa-f]{2}[:]){5}[0-9A-Fa-f]{2})");
 
             //recherche d'une adresse MAC dans le tableau
-            bool MAC1 = regex_search(tableau[i], rgx);
-            bool MAC2 = regex_search(tableau[i + 1], rgx);
+            bool MAC1 = regex_search(tableau[i], rgxMAC);
+            bool MAC2 = regex_search(tableau[i + 1], rgxMAC);
 
             if (MAC1 && MAC2) //si deux MAC à la suite trouvées
             {
                 tableau[i] += tableau[i + 1]; //concaténation des MAC
+                tableau.erase(tableau.begin() + (i + 1));
+            }
+            else //si non trouvées
+            {
+                i++;
+            }
+
+
+            /***** RECHERCHE ADRESSE IP *****/
+
+            //expression régulière d'une adresse IP
+            regex rgxIP("([0-9]{1,3}\.){3}[0-9]{1,3}");
+
+            //recherche d'une adresse IP dans le tableau
+            bool IP1 = regex_search(tableau[i], rgxIP);
+            bool IP2 = regex_search(tableau[i + 1], rgxIP);
+
+            if (IP1 && IP2) //si deux IP à la suite trouvées
+            {
+                tableau[i] = tableau[i] + tableau[i + 1]; //concaténation des IP       TOTOTOTOOTOTOTOTOOTOTOTOTOOTOTOTOTOTOTOTO
                 tableau.erase(tableau.begin() + (i + 1));
             }
             else //si non trouvées
@@ -69,6 +171,7 @@ void repartition(vector<string>& tableau, vm &Lvm, report& Lreport, disk& Ldisk,
 void insertion(vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork)
 {
     Lvm.UP();
+    Lvm.setID_vm();
 
     Lreport.setID_vm(Lvm);
     Lreport.UP();
@@ -110,7 +213,7 @@ void vm::setID_service(string VMID_service)
         char id_service[300] = "";
         char qID_service[500] = "";
 
-        //Requête
+        //Requête pour obtenir l'ID_service du client associé à la VM
         sprintf(qID_service, "SELECT service.ID_service FROM client JOIN service ON (client.ID_client = service.ID_client) JOIN metrics ON (service.M_description_service = metrics.ID_metrics) WHERE correspondence_metrics = 'vCloud' AND code_client = '%s';", VMID_service.c_str());
 
         mysql_query(&connexion, qID_service);
@@ -140,14 +243,15 @@ void vm::setID_service(string VMID_service)
                 sprintf(id_service, "%.*s ", (int)lengths[m], row_service[m] ? row_service[m] : "NULL");
                 
             }
-            VMID_service = id_service;
+            VMID_service = id_service; //Enregistrer l'ID_service du client associé
         }
 
+        //Si le client n'existe pas
         if (mysql_num_rows(rID_service) == 0)
         {
             do
             {
-                //Requête insertion du nouveau client
+                //Requête insertion du nouveau client "fantome"
 
                 char qIN[500] = "";
 
@@ -156,7 +260,7 @@ void vm::setID_service(string VMID_service)
                 mysql_query(&connexion, qIN);
 
 
-                //Acquisition de l'ID du client créé
+                //Acquisition de l'ID du client "fantome" créé
 
                 char qID_client[500] = "";
                 char id_client[500] = "";
@@ -186,7 +290,7 @@ void vm::setID_service(string VMID_service)
 
                     for (m = 0; m < 1; m++)
                     {
-                        //Récupération valeur
+                        //Récupération ID
                         sprintf(id_client, "%.*s ", (int)lengths[m], row_client[m] ? row_client[m] : "NULL");
 
                     }
@@ -197,6 +301,7 @@ void vm::setID_service(string VMID_service)
                 char qMETRIQUE[500] = "";
                 char M_description_service[500] = "";
 
+                //Requete pour recupérer l'ID_metrique vcloud
                 sprintf(qMETRIQUE, "SELECT ID_metrics FROM metrics WHERE type_metrics = 'service' AND correspondence_metrics = 'vCloud';");
 
                 mysql_query(&connexion, qMETRIQUE);
@@ -222,13 +327,13 @@ void vm::setID_service(string VMID_service)
 
                     for (s = 0; s < 1; s++)
                     {
-                        //Récupération valeur
+                        //Récupération ID
                         sprintf(M_description_service, "%.*s ", (int)lengths[s], row_METRIQUE[s] ? row_METRIQUE[s] : "NULL");
 
                     }
                 }
 
-                //Insertion de la table service du client créé
+                //Insertion de la table service du client "fantome" créé
 
                 char qSER[500] = "";
 
@@ -548,7 +653,7 @@ void vm::UP()
         
         //Vérification de l'existence de la vm
         sprintf(qvm, "SELECT ID_vm FROM vm WHERE ID_service = '%s' AND UID = '%s' AND vmName = '%s';", ID_service.c_str(), UID.c_str(), vmName.c_str());
-                
+
         mysql_query(&connexion, qvm);
 
         MYSQL_RES* rvm;
@@ -559,7 +664,7 @@ void vm::UP()
         m = 0;
         unsigned int num_champs;
         num_champs = 0;
-        
+
         rvm = mysql_use_result(&connexion);
 
         num_champs = mysql_num_fields(rvm);
@@ -579,7 +684,7 @@ void vm::UP()
 
         //Si vm inexistante
         if (mysql_num_rows(rvm) == 0)
-        {            
+        {
             do
             {
                 //Requête insertion de la nouvelle vm
@@ -587,45 +692,8 @@ void vm::UP()
                 char qIN[500] = "";
 
                 sprintf(qIN, "INSERT INTO vm (ID_service, UUID, UID, M_OS, vmName, hostName, M_SLA, guestOSCustomization, M_HWVersion, vmware_Tools, current) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '1');", ID_service.c_str(), UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str());
-                                
+
                 mysql_query(&connexion, qIN);
-                                
-
-                //Acquisition de l'ID de la vm créée
-                
-                char qID_vm[500] = "";                
-
-                sprintf(qID_vm, "SELECT ID_vm FROM vm WHERE UUID = '%s' AND UID = '%s' AND vmName = '%s' AND hostName = '%s';", UUID.c_str(), UID.c_str(), vmName.c_str(), hostName.c_str());
-
-                mysql_query(&connexion, qID_vm);
-
-                MYSQL_RES* rID_vm;
-                rID_vm = NULL;
-                MYSQL_ROW row_vm;
-
-                unsigned int m;
-                m = 0;
-                unsigned int num_champs;
-                num_champs = 0;
-
-                rID_vm = mysql_use_result(&connexion);
-
-                num_champs = mysql_num_fields(rID_vm);
-
-                while ((row_vm = mysql_fetch_row(rID_vm)))
-                {
-                    unsigned long* lengths;
-
-                    lengths = mysql_fetch_lengths(rID_vm);
-
-                    for (m = 0; m < 1; m++)
-                    {
-                        //Récupération valeur
-                        sprintf(id_vm, "%.*s ", (int)lengths[m], row_vm[m] ? row_vm[m] : "NULL");
-
-                    }
-                    ID_vm = id_vm;
-                }
                                 
 
                 //Acquisition de la quantité de vm du client
@@ -709,14 +777,13 @@ void vm::UP()
 
                 for (m = 0; m < 1; m++)
                 {
-                    //Récupération valeur
+                    //Récupération ID
                     sprintf(id_vm, "%.*s ", (int)lengths[m], row_vm[m] ? row_vm[m] : "NULL");
 
                 }
-                ID_vm = id_vm;
             }
 
-            sprintf(qUPDATE, "UPDATE vm SET UUID = '%s', UID = '%s', M_OS = '%s', vmName = '%s', hostName = '%s', M_SLA = '%s', guestOSCustomization = '%s', M_HWVersion = '%s', vmware_Tools = '%s', current = '1' WHERE ID_vm = '%s';", UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str(), ID_vm.c_str());
+            sprintf(qUPDATE, "UPDATE vm SET UUID = '%s', UID = '%s', M_OS = '%s', vmName = '%s', hostName = '%s', M_SLA = '%s', guestOSCustomization = '%s', M_HWVersion = '%s', vmware_Tools = '%s', current = '1' WHERE ID_vm = '%s';", UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str(), id_vm);
 
             mysql_query(&connexion, qUPDATE);
         }
@@ -725,6 +792,62 @@ void vm::UP()
     {
         fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
+
+    mysql_close(&connexion); //fermeture connection
+}
+
+void vm::setID_vm()
+{
+    string id_vm = "";
+
+    MYSQL connexion;
+    mysql_init(&connexion);
+    mysql_options(&connexion, MYSQL_READ_DEFAULT_GROUP, "mix");
+
+    if (mysql_real_connect(&connexion, "localhost", "root", "", "mix", 0, NULL, 0))
+    {
+        char vm[300] = "";
+        char qvm[500] = "";
+
+        //Vérification de l'existence de la vm
+        sprintf(qvm, "SELECT ID_vm FROM vm WHERE ID_service = '%s' AND UUID = '%s' AND UID = '%s' AND M_OS = '%s' AND vmName = '%s' AND hostName = '%s' AND M_SLA = '%s' AND guestOSCustomization = '%s' AND M_HWVersion = '%s' AND vmware_Tools = '%s' AND current = '1';", ID_service.c_str(), UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str());
+
+        mysql_query(&connexion, qvm);
+
+        MYSQL_RES* rvm;
+        rvm = NULL;
+        MYSQL_ROW row_vm;
+
+        unsigned int m;
+        m = 0;
+        unsigned int num_champs;
+        num_champs = 0;
+
+        rvm = mysql_use_result(&connexion);
+
+        num_champs = mysql_num_fields(rvm);
+
+        while ((row_vm = mysql_fetch_row(rvm)))
+        {
+            unsigned long* lengths;
+
+            lengths = mysql_fetch_lengths(rvm);
+
+            for (m = 0; m < 1; m++)
+            {
+                //Récupération des données
+                sprintf(vm, "%.*s ", (int)lengths[m], row_vm[m] ? row_vm[m] : "NULL");
+
+                id_vm = vm;
+            }
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
+    }
+
+    ID_vm = id_vm;
 
     mysql_close(&connexion); //fermeture connection
 }
@@ -1006,7 +1129,9 @@ void disk::setcapacity_disk(std::string diskcapacity_disk)
         fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
-    capacity_disk = to_string(capacity);
+    int capacitINT = capacity;
+
+    capacity_disk = to_string(capacitINT);
 
     mysql_close(&connexion); //fermeture connection
 }
@@ -1104,7 +1229,7 @@ void disk::UP()
         char disk[300] = "";
         char qdisk[500] = "";
 
-        //Vérification de l'existence du disk
+        //Vérification de l'inexistence du disk
         sprintf(qdisk, "SELECT ID_disk FROM disk WHERE ID_report = '%s' AND capacity_disk = '%s' AND M_type_disk = '%s' AND M_unit = '%s'; ", ID_report.c_str(), capacity_disk.c_str(), M_type_disk.c_str(), M_unit.c_str());
 
         mysql_query(&connexion, qdisk);
@@ -1242,7 +1367,9 @@ void ram::setcapacity_ram(std::string ramcapacity_ram)
         fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
     }
 
-    capacity_ram = to_string(capacity);
+    int capacitINT = capacity;
+
+    capacity_ram = to_string(capacitINT);
 
     mysql_close(&connexion); //fermeture connection
 }
@@ -1331,7 +1458,11 @@ void cpu::setID_report(report& Lreport)
 
 void cpu::setnbrCore(std::string cpunbrCore)
 {
-    nbrCore = cpunbrCore;
+    int CorINT = stoi(cpunbrCore); //conversion vers INT pour éviter problèmes d'insertion de nombre à virgule
+
+    string CorSTRING = to_string(CorINT); //conversion pour adaptation à la classe
+
+    nbrCore = CorSTRING;
 }
 
 void cpu::setM_model_cpu(std::string cpuM_model_cpu)
@@ -1679,10 +1810,11 @@ void network::UP()
 
     if (mysql_real_connect(&connexion, "localhost", "root", "", "mix", 0, NULL, 0))
     {
+        /****** MAC EXTRACTION *****/
+
         vector<string> tabMAC;
         int macChainSize = (size(MAC_address) / MAC_LENGH);
 
-        // Mac address extraction
         for (int i = 0; i < macChainSize; i++)
         {
             // Transfer mac address from Mac_address string to tabMac
@@ -1694,6 +1826,45 @@ void network::UP()
                 MAC_address.pop_back();
             }
         }
+
+        if (tabMAC.size() == 0) // si la vm ne possede pas d'adresse MAC, pour enregistrer champ vide
+        {
+            tabMAC.push_back("");
+        }
+
+
+        /***** IP EXTRACTION *****/
+
+        /*vector<string> tabIP = IP_address;
+
+        char ipCHAR = IP_address;
+        
+        do
+        {
+            tabIP[k] = strchr(ipCHAR, '/');
+
+            IP_address.pop_back();
+            k++;
+        } while (IP_address == "");
+
+        if (tabIP.size() == 0) // si la vm ne possede pas d'adresse IP, pour enregistrer champ vide
+        {
+            tabIP.push_back("");
+        }
+
+
+        while (tabMAC.size() == tabIP.size()) // mise à niveau des deux tableaux pour eviter d'enregistrer des valeurs aleatoires
+        {
+            if (tabMAC.size() < tabIP.size())
+            {
+                tabMAC.push_back("");
+            }
+            else if (tabMAC.size() > tabIP.size())
+            {
+                tabIP.push_back("");
+            }
+        }*/
+
 
         int tailletab = tabMAC.size();
 
@@ -1708,15 +1879,14 @@ void network::UP()
             mysql_query(&connexion, qnetwork);
 
             MYSQL_RES* rnetwork;
-            rnetwork = NULL;
+            rnetwork = mysql_use_result(&connexion);
+
             MYSQL_ROW row_network;
 
             unsigned int m;
             m = 0;
             unsigned int num_champs;
             num_champs = 0;
-
-            rnetwork = mysql_use_result(&connexion);
 
             num_champs = mysql_num_fields(rnetwork);
 

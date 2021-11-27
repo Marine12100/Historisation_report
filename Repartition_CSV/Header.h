@@ -2,6 +2,7 @@
 #define HEADER_H_INCLUDED
 
 #define _CRT_SECURE_NO_WARNINGS
+#define MAC_LENGH 17
 
 #include <iostream>
 #include <string>
@@ -17,7 +18,6 @@
 #include <dirent.h>
 #include <errno.h>
 
-#define MAC_LENGH 17
 
 class vm
 {
@@ -34,6 +34,7 @@ public:
     void setguestOSCustomization(std::string VMguestOSCustomization);
     void setM_HWVersion(std::string VMM_HWVersion);
     void UP();
+    void setID_vm();
     std::string getID_vm();
 
 private:
@@ -152,10 +153,14 @@ private:
     std::string IP_address;
 };
 
+
+void exploration(const char* chemin);
+
 std::vector<std::string> creation(std::string line);
 
 void repartition(std::vector<std::string>& tableau, vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork);
 
 void insertion(vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork);
+
 
 #endif // !HEADER_H_INCLUDED
