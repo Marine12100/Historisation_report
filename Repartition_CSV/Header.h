@@ -59,6 +59,7 @@ public:
     ~report();
     void setID_vm(vm& Lvm);
     void setRptDateHour(std::string reportRptDate, std::string reportRptHour);
+    void setvApp(std::string reportvApp);
     void setPowerOn(std::string reportPowerOn);
     void UP();
     std::string getID_report();
@@ -66,6 +67,7 @@ public:
 private:
     std::string ID_vm;
     std::string RptDateHour;
+    std::string vApp;
     std::string PowerOn;
     std::string ID_report;
 };
