@@ -24,7 +24,7 @@ class vm
 public:
     vm();
     ~vm();
-    void setID_service(std::string VMID_service);
+    void setID_service(std::string VMOrg, std::string VMOrgFullName);
     void setUUID(std::string VMUUID);
     void setUID(std::string VMUID);
     void setvmName(std::string VMvmName);

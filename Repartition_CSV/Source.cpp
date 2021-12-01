@@ -58,15 +58,13 @@ void exploration(const char* chemin)
 
                                 vector <string> tableau = creation(line);
 
-                                if (tableau[0] != "UUID" && tableau[1] != "UID") // verifier que ce n'est pas une ligne d'en-tete
+                                if (tableau.size() >= 33 && tableau[0] != "UUID" && tableau[1] != "UID") // verifier que ce n'est pas une ligne d'en-tete
                                 {
                                     repartition(tableau, Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // repartir les cellules
                                     insertion(Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // inserer les objets dans la bdd
                                 }
                             }
-                            cout << "Done" << endl;                            
-
-                            cout << nbrconn << endl;
+                            cout << "Done" << endl;
 
                             /*if (nbrconn >= 65535)
                             {
@@ -157,7 +155,7 @@ void repartition(vector<string>& tableau, vm &Lvm, report& Lreport, disk& Ldisk,
     Lvm.setUUID(tableau[0]);
     Lvm.setUID(tableau[1]);
     Lvm.setvmName(tableau[2]);
-    Lvm.setID_service(tableau[3]);
+    Lvm.setID_service(tableau[3], tableau[4]);
     Lvm.sethostName(tableau[5]);
     Lnetwork.setIP_address(tableau[6]);
     Lnetwork.setMAC_address(tableau[7]);
@@ -210,7 +208,7 @@ vm::~vm()
 {
 }
 
-void vm::setID_service(string VMID_service)
+void vm::setID_service(string VMOrg, string VMOrgFullName)
 {
     MYSQL connexion;
     mysql_init(&connexion);
@@ -221,7 +219,7 @@ void vm::setID_service(string VMID_service)
         char qID_service[500] = "";
 
         //Requête pour obtenir l'ID_service du client associé à la VM
-        sprintf(qID_service, "SELECT service.ID_service FROM client JOIN service ON (client.ID_client = service.ID_client) JOIN metrics ON (service.M_description_service = metrics.ID_metrics) WHERE correspondence_metrics = 'vCloud' AND code_client = '%s';", VMID_service.c_str());
+        sprintf(qID_service, "SELECT service.ID_service FROM client JOIN service ON (client.ID_client = service.ID_client) JOIN metrics ON (service.M_description_service = metrics.ID_metrics) WHERE correspondence_metrics = 'vCloud' AND code_client = '%s';", VMOrg.c_str());
 
         mysql_query(&connexion, qID_service);
 
@@ -253,7 +251,7 @@ void vm::setID_service(string VMID_service)
 
                 char qIN[500] = "";
 
-                sprintf(qIN, "INSERT INTO client (code_client) VALUES ('%s');", VMID_service.c_str());
+                sprintf(qIN, "INSERT INTO client (code_client, social_reason) VALUES ('%s', '%s');", VMOrg.c_str(), VMOrgFullName.c_str());
 
                 mysql_query(&connexion, qIN);
 
@@ -263,7 +261,7 @@ void vm::setID_service(string VMID_service)
                 char qID_client[500] = "";
                 char id_client[500] = "";
 
-                sprintf(qID_client, "SELECT ID_client FROM client WHERE code_client = '%s';", VMID_service.c_str());
+                sprintf(qID_client, "SELECT ID_client FROM client WHERE code_client = '%s' AND social_reason = '%s';", VMOrg.c_str(), VMOrgFullName.c_str());
 
                 mysql_query(&connexion, qID_client);
 
@@ -281,8 +279,6 @@ void vm::setID_service(string VMID_service)
                         sprintf(id_client, "%.*s ", (int)lengths[m], row_client[m] ? row_client[m] : "NULL");
                     }
                 }
-
-                ID_service = id_service; // donner la valeur de l'id du client "fantome" à l'id_service de la classe
 
                 //Recherche de la métrique du service du client
 
@@ -315,9 +311,65 @@ void vm::setID_service(string VMID_service)
 
                 sprintf(qSER, "INSERT INTO service (ID_client, M_description_service, quantity) VALUES ('%s', '%s', '1');", id_client, M_description_service);
 
-                mysql_query(&connexion, qSER);                
+                mysql_query(&connexion, qSER);
+
+
+                //Acquisition de l'ID de service du client "fantome" créé
+
+                char qID_service[500] = "";
+                char id_service[500] = "";
+
+                sprintf(qID_service, "SELECT ID_service FROM service JOIN client ON (client.ID_client = service.ID_client) JOIN metrics ON (service.M_description_service = metrics.ID_metrics) WHERE client.code_client = '%s' AND client.social_reason = '%s' AND metrics.correspondence_metrics = 'vCloud';", VMOrg.c_str(), VMOrgFullName.c_str());
+
+                mysql_query(&connexion, qID_service);
+
+                MYSQL_RES* rID_service = mysql_use_result(&connexion);
+                MYSQL_ROW row_service;
+                unsigned int num_champs_service = mysql_num_fields(rID_service);
+
+                while (row_service = mysql_fetch_row(rID_service))
+                {
+                    unsigned long* lengths = mysql_fetch_lengths(rID_service);
+
+                    for (int m = 0; m < 1; m++)
+                    {
+                        //Récupération ID
+                        sprintf(id_service, "%.*s ", (int)lengths[m], row_client[m] ? row_client[m] : "NULL");
+                    }
+                }
+                ID_service = id_service;
 
             } while (mysql_num_rows(rID_service) != 0); //Tant que le client n'existe pas
+        }
+        else // mettre à jour les données
+        {
+            char qUPDATE[500] = "";
+            char qID_client[500] = "";
+            char id_client[500] = "";
+
+            // Acquisition de l'ID de la vm
+            sprintf(qID_client, "SELECT ID_client FROM client WHERE code_client = '%s';", VMOrg.c_str());
+
+            mysql_query(&connexion, qID_client);
+
+            MYSQL_RES* rID_client = mysql_use_result(&connexion);
+            MYSQL_ROW row_client;
+            unsigned int num_champs = mysql_num_fields(rID_client);
+
+            while (row_client = mysql_fetch_row(rID_client))
+            {
+                unsigned long* lengths = mysql_fetch_lengths(rID_client);
+
+                for (int m = 0; m < 1; m++)
+                {
+                    //Récupération ID
+                    sprintf(id_client, "%.*s ", (int)lengths[m], row_client[m] ? row_client[m] : "NULL");
+                }
+            }
+
+            sprintf(qUPDATE, "UPDATE client SET code_client = '%s', social_reason = '%s' WHERE ID_client = '%s';", VMOrg.c_str(), VMOrgFullName.c_str(), id_client);
+
+            mysql_query(&connexion, qUPDATE);
         }
     }
     else //Erreur connexion
