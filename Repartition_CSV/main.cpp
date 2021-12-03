@@ -4,7 +4,7 @@ using namespace std;
 
 int main()
 {    
-    const char* chemin = "C:\\Resourcesv2\\2020-11-26-PM";
+    const char* chemin = "C:\\Resourcesv2";
 
     exploration(chemin);
 }

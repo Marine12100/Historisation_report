@@ -24,17 +24,16 @@ class vm
 public:
     vm();
     ~vm();
-    void setID_service(std::string VMOrg, std::string VMOrgFullName);
+    void setID_service(MYSQL &connexion, std::string VMOrg, std::string VMOrgFullName);
     void setUUID(std::string VMUUID);
     void setUID(std::string VMUID);
     void setvmName(std::string VMvmName);
     void sethostName(std::string VMhostName);
-    void setM_OS(std::string VMM_OS);
-    void setM_SLA(std::string VMM_SLA);
+    void setM_OS(MYSQL& connexion, std::string VMM_OS);
+    void setM_SLA(MYSQL& connexion, std::string VMM_SLA);
     void setguestOSCustomization(std::string VMguestOSCustomization);
-    void setM_HWVersion(std::string VMM_HWVersion);
-    void UP();
-    void setID_vm();
+    void setM_HWVersion(MYSQL& connexion, std::string VMM_HWVersion);
+    void UP(MYSQL& connexion);
     std::string getID_vm();
 
 private:
@@ -61,7 +60,7 @@ public:
     void setRptDateHour(std::string reportRptDate, std::string reportRptHour);
     void setvApp(std::string reportvApp);
     void setPowerOn(std::string reportPowerOn);
-    void UP();
+    void UP(MYSQL &connexion);
     std::string getID_report();
 
 private:
@@ -79,9 +78,9 @@ public:
     disk();
     ~disk();
     void setID_report(report& Lreport);
-    void setcapacity_disk(std::string diskcapacity_disk);
-    void setM_type_disk(std::string diskM_type_disk);
-    void UP();
+    void setcapacity_disk(MYSQL& connexion, std::string diskcapacity_disk);
+    void setM_type_disk(MYSQL& connexion, std::string diskM_type_disk);
+    void UP(MYSQL& connexion);
 
 private:
     std::string ID_report;
@@ -97,8 +96,8 @@ public:
     ram();
     ~ram();
     void setID_report(report& Lreport);
-    void setcapacity_ram(std::string ramcapacity_ram);
-    void UP();
+    void setcapacity_ram(MYSQL& connexion, std::string ramcapacity_ram);
+    void UP(MYSQL& connexion);
 
 private:
     std::string ID_report;
@@ -114,8 +113,8 @@ public:
     ~cpu();
     void setID_report(report& Lreport);
     void setnbrCore(std::string cpunbrCore);
-    void setM_model_cpu(std::string cpuM_model_cpu);
-    void UP();
+    void setM_model_cpu(MYSQL& connexion, std::string cpuM_model_cpu);
+    void UP(MYSQL& connexion);
 
 private:
     std::string ID_report;
@@ -130,8 +129,8 @@ public:
     backup();
     ~backup();
     void setID_report(report& Lreport);
-    void setM_type_backup(std::string backupM_type_backup);
-    void UP();
+    void setM_type_backup(MYSQL& connexion, std::string backupM_type_backup);
+    void UP(MYSQL& connexion);
 
 private:
     std::string ID_report;
@@ -147,7 +146,7 @@ public:
     void setID_report(report& Lreport);
     void setIP_address(std::string networkIP_address);
     void setMAC_address(std::string networkMAC_address);
-    void UP();
+    void UP(MYSQL& connexion);
 
 private:
     std::string ID_report;
@@ -160,9 +159,11 @@ void exploration(const char* chemin);
 
 std::vector<std::string> creation(std::string line);
 
-void repartition(std::vector<std::string>& tableau, vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork);
+void connexion(std::vector<std::string>& tableau);
 
-void insertion(vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork);
+void repartition(MYSQL &connexion, std::vector<std::string>& tableau, vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork);
+
+void insertion(MYSQL &connexion, vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork);
 
 
 #endif // !HEADER_H_INCLUDED
