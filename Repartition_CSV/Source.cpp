@@ -4,7 +4,7 @@ using namespace std;
 
 int nbrconn;
 
-void exploration(const char* chemin)
+void exploration(MYSQL *connexion, const char* chemin)
 {
     char chaine[4096];
 
@@ -27,7 +27,7 @@ void exploration(const char* chemin)
                         strcat(chaine, "/");
                         strcat(chaine, fichierLu->d_name);
 
-                        exploration(chaine);
+                        exploration(connexion, chaine);
                     }
                 }
                 else // si le fichier parcouru n'est pas un repertoire
@@ -52,16 +52,24 @@ void exploration(const char* chemin)
 
                                 if (tableau.size() >= 33 && tableau[0] != "UUID" && tableau[1] != "UID") // verifier que ce n'est pas une ligne d'en-tete
                                 {
-                                    connexion(tableau);
+                                    vm Lvm;
+                                    report Lreport;
+                                    disk Ldisk;
+                                    ram Lram;
+                                    cpu Lcpu;
+                                    backup Lbackup;
+                                    network Lnetwork;
+
+                                    repartition(connexion, tableau, Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // repartir les cellules
+                                    insertion(connexion, Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // inserer les objets dans la bdd
                                 }
                             }
                             cout << "Done" << endl;
 
-                            /*if (nbrconn >= 65535)
+                            if (mysql_ping(connexion) != 0) // VERIFICATION DE LA CONNEXION
                             {
-                                Sleep(2000);
-                                nbrconn = 0;
-                            }*/
+                                fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(connexion));
+                            }
                         }
                         else
                         {
@@ -103,16 +111,23 @@ vector<string> creation(string line)
             //expression régulière d'une adresse MAC
             regex rgxMAC("(([0-9A-Fa-f]{2}[:]){5}[0-9A-Fa-f]{2})");
 
-            //expression régulière d'une adresse IP
-            regex rgxIP("([0-9]{1,3}[.]){3}[0-9]{1,3}");
-
             //recherche de deux adresses MAC à la suite dans le tableau
             bool MAC1 = regex_search(tableau[i], rgxMAC);
             bool MAC2 = regex_search(tableau[i + 1], rgxMAC);
 
-            //recherche de deux adresses IP à la suite dans le tableau
-            bool IP1 = regex_search(tableau[i], rgxIP);
-            bool IP2 = regex_search(tableau[i + 1], rgxIP);
+            //expression régulière d'une adresse IPv4
+            regex rgxIPv4("([0-9]{1,3}[.]){3}[0-9]{1,3}");
+
+            //recherche de deux adresses IPv4 à la suite dans le tableau
+            bool IPv4_1 = regex_search(tableau[i], rgxIPv4);
+            bool IPv4_2 = regex_search(tableau[i + 1], rgxIPv4);
+
+            //expression régulière d'une adresse IPv6
+            regex rgxIPv6("(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))");
+
+            //recherche de deux adresses IPv6 à la suite dans le tableau
+            bool IPv6_1 = regex_search(tableau[i], rgxIPv6);
+            bool IPv6_2 = regex_search(tableau[i], rgxIPv6);
 
 
             if (MAC1 && MAC2) //si deux MAC à la suite trouvées
@@ -120,9 +135,14 @@ vector<string> creation(string line)
                 tableau[i] = tableau[i] + tableau[i + 1]; //concaténation des MAC
                 tableau.erase(tableau.begin() + (i + 1));
             }
-            else if (IP1 && IP2) //si deux IP à la suite trouvées
+            else if (IPv4_1 && IPv4_2) //si deux IPv4 à la suite trouvées
             {
-                tableau[i] = tableau[i] + "/" + tableau[i + 1]; //concaténation des IP
+                tableau[i] = tableau[i] + "/" + tableau[i + 1]; //concaténation des IPv4
+                tableau.erase(tableau.begin() + (i + 1));
+            }
+            else if (IPv6_1 && IPv6_2) //si deux IPv6 à la suite trouvées
+            {
+                tableau[i] = tableau[i] + "/" + tableau[i + 1]; //concaténation des IPv6
                 tableau.erase(tableau.begin() + (i + 1));
             }
             else //si non trouvées
@@ -135,40 +155,14 @@ vector<string> creation(string line)
 
     for (size_t i = 0; i < tableau.size(); i++)
     {
-        tableau[i].erase(remove(tableau[i].begin(), tableau[i].end(), '"'), tableau[i].end()); //supprimer les guillemets de la cellule
+        tableau[i].erase(remove(tableau[i].begin(), tableau[i].end(), '"'), tableau[i].end()); //supprimer les guillemets doubles de la cellule
+        tableau[i].erase(remove(tableau[i].begin(), tableau[i].end(), '\''), tableau[i].end()); //supprimer les guillemets simples de la cellule
     }
 
     return tableau;
 }
 
-void connexion(vector<string>& tableau)
-{
-    MYSQL connexion;
-    mysql_init(&connexion);
-
-    if (mysql_real_connect(&connexion, "192.168.134.106", "admin", "root", "mix", 0, NULL, 0))
-    {
-        vm Lvm;
-        report Lreport;
-        disk Ldisk;
-        ram Lram;
-        cpu Lcpu;
-        backup Lbackup;
-        network Lnetwork;
-
-        repartition(connexion, tableau, Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // repartir les cellules
-        insertion(connexion, Lvm, Lreport, Ldisk, Lram, Lcpu, Lbackup, Lnetwork); // inserer les objets dans la bdd
-    }
-    else
-    {
-        fprintf(stderr, "Failed to connect to database: Error: %s\n", mysql_error(&connexion));
-    }
-
-    mysql_close(&connexion); //fermeture connection
-    nbrconn++;
-}
-
-void repartition(MYSQL &connexion, vector<string>& tableau, vm &Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork)
+void repartition(MYSQL*connexion, vector<string>& tableau, vm &Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork)
 {
     Lvm.setUUID(tableau[0]);
     Lvm.setUID(tableau[1]);
@@ -192,27 +186,12 @@ void repartition(MYSQL &connexion, vector<string>& tableau, vm &Lvm, report& Lre
     Lvm.setM_HWVersion(connexion, tableau[29]);
 }
 
-void insertion(MYSQL &connexion, vm& Lvm, report& Lreport, disk& Ldisk, ram& Lram, cpu& Lcpu, backup& Lbackup, network& Lnetwork)
+void insertion(MYSQL *connexion, vm& Lvm, report& Lreport, disk &Ldisk, ram &Lram, cpu &Lcpu, backup &Lbackup, network &Lnetwork)
 {
     Lvm.UP(connexion);
 
     Lreport.setID_vm(Lvm);
-    Lreport.UP(connexion);
-
-    Ldisk.setID_report(Lreport);
-    Ldisk.UP(connexion);
-
-    Lram.setID_report(Lreport);
-    Lram.UP(connexion);
-
-    Lcpu.setID_report(Lreport);
-    Lcpu.UP(connexion);
-
-    Lbackup.setID_report(Lreport);
-    Lbackup.UP(connexion);
-
-    Lnetwork.setID_report(Lreport);
-    Lnetwork.UP(connexion);
+    Lreport.UP(connexion, Ldisk, Lram, Lcpu, Lbackup, Lnetwork);
 }
 
 // VM
@@ -225,164 +204,171 @@ vm::~vm()
 {
 }
 
-void vm::setID_service(MYSQL &connexion, string VMOrg, string VMOrgFullName)
+void vm::setID_service(MYSQL *connexion, string VMOrg, string VMOrgFullName)
 {
-    char id_service[300] = "";
-    char qID_service[500] = "";
-    char qIN[500] = "";
+    /***** SELECT ID_client *****/
 
-    //Requête pour obtenir l'ID_service du client associé à la VM
-    sprintf(qID_service, "SELECT service.ID_service FROM client JOIN service ON (client.ID_client = service.ID_client) JOIN metrics ON (service.M_description_service = metrics.ID_metrics) WHERE correspondence_metrics = 'vCloud' AND code_client = '%s';", VMOrg.c_str());
+    char qSELECT_ID_client[500] = "";
+    char rID_client[500] = "";
 
-    mysql_query(&connexion, qID_service);
+    sprintf(qSELECT_ID_client, "SELECT ID_client FROM client WHERE code_client = '%s';", VMOrg.c_str());
+    mysql_query(connexion, qSELECT_ID_client);
 
-    MYSQL_RES* RESID_service = mysql_use_result(&connexion);
-    MYSQL_ROW row_service;
+    MYSQL_RES* RES_ID_client = mysql_use_result(connexion);
+    MYSQL_ROW ROW_ID_client = NULL;
 
-    while (row_service = mysql_fetch_row(RESID_service))
+    while ((ROW_ID_client = mysql_fetch_row(RES_ID_client)))
     {
-        unsigned long* lengths = mysql_fetch_lengths(RESID_service);
+        unsigned long* L_ID_client = mysql_fetch_lengths(RES_ID_client);
 
-        for (int m = 0; m < 1; m++)
+        for (int i = 0; i < 1; i++)
+            sprintf(rID_client, "%.*s", (int)L_ID_client[i], ROW_ID_client[i]);
+    }
+
+    if (mysql_num_rows(RES_ID_client) == 0) // SI CLIENT INEXISTANT
+    {
+        /***** INSERT CLIENT FANTOME *****/
+
+        char qINSERT_client[500] = "";
+
+        sprintf(qINSERT_client, "INSERT INTO client (code_client, social_reason) VALUES ('%s', '%s');", VMOrg.c_str(), VMOrgFullName.c_str());
+        mysql_query(connexion, qINSERT_client);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            //Récupération valeur
-            sprintf(id_service, "%.*s ", (int)lengths[m], row_service[m] ? row_service[m] : "NULL");                
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_client << endl;
+            exit(0);
+        }
+
+        /***** SELECT NEW_ID_client *****/
+
+        mysql_query(connexion, qSELECT_ID_client);
+
+        MYSQL_RES* RES_NEW_ID_client = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_ID_client = NULL;
+
+        while ((ROW_NEW_ID_client = mysql_fetch_row(RES_NEW_ID_client)))
+        {
+            unsigned long* L_NEW_ID_client = mysql_fetch_lengths(RES_NEW_ID_client);
+
+            for (int i = 0; i < 1; i++)
+                sprintf(rID_client, "%.*s", (int)L_NEW_ID_client[i], ROW_NEW_ID_client[i]);
+        }
+
+        if (mysql_num_rows(RES_NEW_ID_client) == 0) // SI REQUETE VIDE
+        {
+            cout << "Identifiant du client correspondant inexistant" << endl;
+            cout << qSELECT_ID_client << endl;
+            exit(0);
+        }
+
+        /***** SELECT METRIQUE vCloud *****/
+
+        char qSELECT_ID_vCloud[500] = "";
+        char rID_vCloud[500] = "";
+
+        sprintf(qSELECT_ID_vCloud, "SELECT ID_metrics FROM metrics WHERE type_metrics = 'service' AND correspondence_metrics = 'vCloud';");
+        mysql_query(connexion, qSELECT_ID_vCloud);
+
+        MYSQL_RES* RES_ID_vCloud = mysql_use_result(connexion);
+        MYSQL_ROW ROW_ID_vCloud = NULL;
+
+        while ((ROW_ID_vCloud = mysql_fetch_row(RES_ID_vCloud)))
+        {
+            unsigned long* L_ID_vCloud = mysql_fetch_lengths(RES_ID_vCloud);
+
+            for (int i = 0; i < 1; i++)
+                sprintf(rID_vCloud, "%.*s", (int)L_ID_vCloud[i], ROW_ID_vCloud[i] ? ROW_ID_vCloud[i] : "NULL");
+        }
+
+        if (mysql_num_rows(RES_ID_vCloud) == 0) // SI REQUETE VIDE
+        {
+            /***** INSERT METRICS *****/
+
+            char qINSERT_metrics[500] = "";
+
+            sprintf(qINSERT_metrics, "INSERT INTO metrics (type_metrics, correspondence_metrics) VALUES('service', 'vCloud');");
+            mysql_query(connexion, qINSERT_metrics);
+
+            if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
+            {
+                fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+                cout << qINSERT_metrics << endl;
+                exit(0);
+            }
+
+            /***** SELECT NEW_ID_metrics *****/
+
+            mysql_query(connexion, qSELECT_ID_vCloud);
+
+            MYSQL_RES* RES_NEW_ID_vCloud = mysql_use_result(connexion);
+            MYSQL_ROW ROW_NEW_ID_vCloud = NULL;
+
+            while (ROW_NEW_ID_vCloud = mysql_fetch_row(RES_NEW_ID_vCloud))
+            {
+                unsigned long* L_NEW_ID_vCloud = mysql_fetch_lengths(RES_NEW_ID_vCloud);
+
+                for (int i = 0; i < 1; i++)
+                    sprintf(rID_vCloud, "%.*s", (int)L_NEW_ID_vCloud[i], ROW_NEW_ID_vCloud[i] ? ROW_NEW_ID_vCloud[i] : "NULL");
+            }
+
+            if (mysql_num_rows(RES_NEW_ID_vCloud) == 0) // SI REQUETE VIDE
+            {
+                cout << "Metrique vCloud inexistante" << endl;
+                cout << qSELECT_ID_vCloud << endl;
+                exit(0);
+            }
+
+            mysql_free_result(RES_NEW_ID_vCloud);
+        }
+
+        /***** INSERT SERVICE *****/
+
+        char qINSERT_service[500] = "";
+
+        sprintf(qINSERT_service, "INSERT INTO service (ID_client, M_description_service, quantity) VALUES ('%s', '%s', '0');", rID_client, rID_vCloud);
+        mysql_query(connexion, qINSERT_service);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
+        {
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_service << endl;
+            exit(0);
         }
     }
-    ID_service = id_service; // donner la valeur de l'id du client à l'id_service de la classe
 
-    /***** SI LE CLIENT N'EXISTE PAS *****/
+    mysql_free_result(RES_ID_client);
 
-    if (mysql_num_rows(RESID_service) == 0)
+    /***** SELECT ID_SERVICE *****/
+
+    char qSELECT_ID_service[500] = "";
+    char rID_service[500] = "";
+
+    sprintf(qSELECT_ID_service, "SELECT service.ID_service FROM client JOIN service ON (client.ID_client = service.ID_client) JOIN metrics ON (service.M_description_service = metrics.ID_metrics) WHERE correspondence_metrics = 'vCloud' AND client.ID_client = '%s';", rID_client);
+    mysql_query(connexion, qSELECT_ID_service);
+
+    MYSQL_RES* RES_ID_service = mysql_use_result(connexion);
+    MYSQL_ROW ROW_ID_service = NULL;
+
+    while ((ROW_ID_service = mysql_fetch_row(RES_ID_service)))
     {
-        do
-        {
-            //Requête insertion du nouveau client "fantome"
+        unsigned long* L_ID_service = mysql_fetch_lengths(RES_ID_service);
 
-            sprintf(qIN, "INSERT INTO client (code_client, social_reason) VALUES ('%s', '%s');", VMOrg.c_str(), VMOrgFullName.c_str());
-
-            mysql_query(&connexion, qIN);
-
-
-            //Acquisition de l'ID du client "fantome" créé            
-
-            char qID_client[500] = "";
-            char id_client[500] = "";
-
-            sprintf(qID_client, "SELECT ID_client FROM client WHERE code_client = '%s' AND social_reason = '%s';", VMOrg.c_str(), VMOrgFullName.c_str());
-
-            mysql_query(&connexion, qID_client);
-
-            MYSQL_RES* rID_client = mysql_use_result(&connexion);
-            MYSQL_ROW row_client;
-
-            while (row_client = mysql_fetch_row(rID_client))
-            {
-                unsigned long* lengths = mysql_fetch_lengths(rID_client);
-
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération ID
-                    sprintf(id_client, "%.*s ", (int)lengths[m], row_client[m] ? row_client[m] : "NULL");
-                }
-            }
-            mysql_free_result(rID_client);
-
-            //Recherche de la métrique du service du client
-
-            char qMETRIQUE[500] = "";
-            char M_description_service[500] = "";
-
-            //Requete pour recupérer l'ID_metrique vcloud
-            sprintf(qMETRIQUE, "SELECT ID_metrics FROM metrics WHERE type_metrics = 'service' AND correspondence_metrics = 'vCloud';");
-
-            mysql_query(&connexion, qMETRIQUE);
-
-            MYSQL_RES* rMETRIQUE = mysql_use_result(&connexion);
-            MYSQL_ROW row_METRIQUE;
-
-            while (row_METRIQUE = mysql_fetch_row(rMETRIQUE))
-            {
-                unsigned long* lengths = mysql_fetch_lengths(rMETRIQUE);
-
-                for (int s = 0; s < 1; s++)
-                {
-                    //Récupération ID
-                    sprintf(M_description_service, "%.*s ", (int)lengths[s], row_METRIQUE[s] ? row_METRIQUE[s] : "NULL");
-                }
-            }
-            mysql_free_result(rMETRIQUE);
-
-            //Insertion de la table service du client "fantome" créé
-
-            char qSER[500] = "";
-
-            sprintf(qSER, "INSERT INTO service (ID_client, M_description_service, quantity) VALUES ('%s', '%s', '1');", id_client, M_description_service);
-
-            mysql_query(&connexion, qSER);
-
-
-            //Acquisition de l'ID de service du client "fantome" créé
-
-            char qID_service[500] = "";
-            char id_service[500] = "";
-
-            sprintf(qID_service, "SELECT ID_service FROM service JOIN client ON (client.ID_client = service.ID_client) JOIN metrics ON (service.M_description_service = metrics.ID_metrics) WHERE client.code_client = '%s' AND client.social_reason = '%s' AND metrics.correspondence_metrics = 'vCloud';", VMOrg.c_str(), VMOrgFullName.c_str());
-
-            mysql_query(&connexion, qID_service);
-
-            MYSQL_RES* rID_service = mysql_use_result(&connexion);
-            MYSQL_ROW row_service;
-
-            while (row_service = mysql_fetch_row(rID_service))
-            {
-                unsigned long* lengths = mysql_fetch_lengths(rID_service);
-
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération ID
-                    sprintf(id_service, "%.*s ", (int)lengths[m], row_service[m] ? row_service[m] : "NULL");
-                }
-            }
-            ID_service = id_service;
-
-            mysql_free_result(rID_service);
-
-        } while (mysql_num_rows(RESID_service) != 0); //Tant que le client n'existe pas
-
-        mysql_free_result(RESID_service);
+        for (int i = 0; i < 1; i++)
+            sprintf(rID_service, "%.*s", (int)L_ID_service[i], ROW_ID_service[i] ? ROW_ID_service[i] : "NULL");
     }
-    else // mettre à jour les données
+
+    if (mysql_num_rows(RES_ID_service) == 0) // SI REQUETE VIDE
     {
-        char qUPDATE[500] = "";
-        char qID_client[500] = "";
-        char id_client[500] = "";
-
-        // Acquisition de l'ID de la vm
-        sprintf(qID_client, "SELECT ID_client FROM client WHERE code_client = '%s';", VMOrg.c_str());
-
-        mysql_query(&connexion, qID_client);
-
-        MYSQL_RES* rID_client = mysql_use_result(&connexion);
-        MYSQL_ROW row_client;
-
-        while (row_client = mysql_fetch_row(rID_client))
-        {
-            unsigned long* lengths = mysql_fetch_lengths(rID_client);
-
-            for (int m = 0; m < 1; m++)
-            {
-                //Récupération ID
-                sprintf(id_client, "%.*s ", (int)lengths[m], row_client[m] ? row_client[m] : "NULL");
-            }
-        }           
-
-        sprintf(qUPDATE, "UPDATE client SET code_client = '%s', social_reason = '%s' WHERE ID_client = '%s';", VMOrg.c_str(), VMOrgFullName.c_str(), id_client);
-
-        mysql_query(&connexion, qUPDATE);
-
-        mysql_free_result(rID_client);
+        cout << "Service du client correspondant inexistant" << endl;
+        cout << qSELECT_ID_service << endl;
+        exit(0);
     }
+
+    ID_service = rID_service;
+
+    mysql_free_result(RES_ID_service);
 }
 
 void vm::setUUID(std::string VMUUID)
@@ -405,115 +391,139 @@ void vm::sethostName(std::string VMhostName)
     hostName = VMhostName;
 }
 
-void vm::setM_OS(MYSQL& connexion, std::string VMM_OS)
+void vm::setM_OS(MYSQL* connexion, std::string VMM_OS)
 {
-    char OS[300] = "";
-    char qOS[500] = "";
-    char qIN[500] = "";
+    /***** SELECT ID_metrics *****/
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qOS, "SELECT ID_metrics FROM metrics where type_metrics = 'OS' AND correspondence_metrics = '%s';", VMM_OS.c_str());
+    char qSELECT_M_OS[500] = "";
+    char rM_OS[500] = "";
 
-    mysql_query(&connexion, qOS);
+    sprintf(qSELECT_M_OS, "SELECT ID_metrics FROM metrics where type_metrics = 'OS' AND correspondence_metrics = '%s';", VMM_OS.c_str());
+    mysql_query(connexion, qSELECT_M_OS);
 
-    MYSQL_RES* rOS = mysql_use_result(&connexion);
-    MYSQL_ROW row_OS;
+    MYSQL_RES* RES_M_OS = mysql_use_result(connexion);
+    MYSQL_ROW ROW_M_OS = NULL;
 
-    while (row_OS = mysql_fetch_row(rOS))
+    while (ROW_M_OS = mysql_fetch_row(RES_M_OS))
     {
-        unsigned long* lengths = mysql_fetch_lengths(rOS);
+        unsigned long* L_ID_metrics = mysql_fetch_lengths(RES_M_OS);
 
-        for (int m = 0; m < 1; m++)
+        for (int i = 0; i < 1; i++)
+            sprintf(rM_OS, "%.*s", (int)L_ID_metrics[i], ROW_M_OS[i] ? ROW_M_OS[i] : "NULL");
+    }
+
+    if (mysql_num_rows(RES_M_OS) == 0) // SI METRIQUE INEXISTANTE
+    {
+        /***** INSERT METRICS *****/
+
+        char qINSERT_metrics[500] = "";
+
+        sprintf(qINSERT_metrics, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('OS', '%s');", VMM_OS.c_str());
+        mysql_query(connexion, qINSERT_metrics);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            //Récupération de l'ID
-            sprintf(OS, "%.*s ", (int)lengths[m], row_OS[m] ? row_OS[m] : "NULL");
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_metrics << endl;
+            exit(0);
         }
-    }
 
-    /***** SI METRIQUE INEXISTANTE *****/
-    if (mysql_num_rows(rOS) == 0)
-    {
-        do
+        /***** SELECT NEW_ID_metrics *****/
+
+        mysql_query(connexion, qSELECT_M_OS);
+
+        MYSQL_RES* RES_NEW_M_OS = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_M_OS = NULL;
+
+        while (ROW_NEW_M_OS = mysql_fetch_row(RES_NEW_M_OS))
         {
-            //Requête insertion de la nouvelle métrique
-            sprintf(qIN, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('OS', '%s');", VMM_OS.c_str());
+            unsigned long* L_NEW_ID_metrics = mysql_fetch_lengths(RES_NEW_M_OS);
 
-            mysql_query(&connexion, qIN);
+            for (int i = 0; i < 1; i++)
+                sprintf(rM_OS, "%.*s", (int)L_NEW_ID_metrics[i], ROW_NEW_M_OS[i] ? ROW_NEW_M_OS[i] : "NULL");
+        }
 
-            //Récupératrion de l'ID de la nouvelle métrique
-            while ((row_OS = mysql_fetch_row(rOS)))
-            {
-                unsigned long* lengths;
+        if (mysql_num_rows(RES_NEW_M_OS) == 0) // SI REQUETE VIDE
+        {
+            cout << "Metrique de l'OS correspondante inexistante" << endl;
+            cout << qSELECT_M_OS << endl;
+            exit(0);
+        }
 
-                lengths = mysql_fetch_lengths(rOS);
-
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération du nouvel ID
-                    sprintf(OS, "%.*s ", (int)lengths[m], row_OS[m] ? row_OS[m] : "NULL");
-
-                }
-            }
-        } while (mysql_num_rows(rOS) != 0); //Jusqu'à ce que la métrique existe
+        mysql_free_result(RES_NEW_M_OS);
     }
-    mysql_free_result(rOS);
 
-    M_OS = OS;
+    M_OS = rM_OS;
+
+    mysql_free_result(RES_M_OS);
 }
 
-void vm::setM_SLA(MYSQL& connexion, std::string VMM_SLA)
+void vm::setM_SLA(MYSQL* connexion, std::string VMM_SLA)
 {
-    char SLA[300] = "";
-    char qSLA[500] = "";
-    char qIN[500] = "";
+    /***** SELECT ID_metrics *****/
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qSLA, "SELECT ID_metrics FROM metrics where type_metrics = 'SLA' AND correspondence_metrics = '%s';", VMM_SLA.c_str());
-    mysql_query(&connexion, qSLA);
+    char qSELECT_M_SLA[500] = "";
+    char rM_SLA[500] = "";
 
-    MYSQL_RES* rSLA = mysql_use_result(&connexion);
-    MYSQL_ROW row_SLA;
+    sprintf(qSELECT_M_SLA, "SELECT ID_metrics FROM metrics where type_metrics = 'SLA' AND correspondence_metrics = '%s';", VMM_SLA.c_str());
+    mysql_query(connexion, qSELECT_M_SLA);
 
-    while (row_SLA = mysql_fetch_row(rSLA))
+    MYSQL_RES* RES_M_SLA = mysql_use_result(connexion);
+    MYSQL_ROW ROW_M_SLA = NULL;    
+
+    while (ROW_M_SLA = mysql_fetch_row(RES_M_SLA))
     {
-        unsigned long* lengths = mysql_fetch_lengths(rSLA);
+        unsigned long* L_M_SLA = mysql_fetch_lengths(RES_M_SLA);
 
-        for (int m = 0; m < 1; m++)
+        for (int i = 0; i < 1; i++)
+            sprintf(rM_SLA, "%.*s", (int)L_M_SLA[i], ROW_M_SLA[i] ? ROW_M_SLA[i] : "NULL");
+    }
+
+    if (mysql_num_rows(RES_M_SLA) == 0) // SI METRIQUE INEXISTANTE
+    {
+        /***** INSERT METRICS *****/
+
+        char qINSERT_M_SLA[500] = "";
+
+        sprintf(qINSERT_M_SLA, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('SLA', '%s');", VMM_SLA.c_str());
+
+        mysql_query(connexion, qINSERT_M_SLA);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            //Récupération de l'ID
-            sprintf(SLA, "%.*s ", (int)lengths[m], row_SLA[m] ? row_SLA[m] : "NULL");
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_M_SLA << endl;
+            exit(0);
         }
-    }
 
-    /***** SI METRIQUE INEXISTANTE *****/
-    if (mysql_num_rows(rSLA) == 0)
-    {
-        do
+        /***** SELECT NEW_ID_metrics *****/
+
+        mysql_query(connexion, qSELECT_M_SLA);
+
+        MYSQL_RES* RES_NEW_M_SLA = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_M_SLA = NULL;
+
+        while (ROW_NEW_M_SLA = mysql_fetch_row(RES_NEW_M_SLA))
         {
-            //Requête insertion de la nouvelle métrique
-            sprintf(qIN, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('SLA', '%s');", VMM_SLA.c_str());
+            unsigned long* L_NEW_M_SLA = mysql_fetch_lengths(RES_NEW_M_SLA);
 
-            mysql_query(&connexion, qIN);
+            for (int i = 0; i < 1; i++)
+                sprintf(rM_SLA, "%.*s", (int)L_NEW_M_SLA[i], ROW_NEW_M_SLA[i] ? ROW_NEW_M_SLA[i] : "NULL");
+        }
 
-            //Récupératrion de l'ID de la nouvelle métrique
-            while ((row_SLA = mysql_fetch_row(rSLA)))
-            {
-                unsigned long* lengths;
+        if (mysql_num_rows(RES_NEW_M_SLA) == 0) // SI REQUETE VIDE
+        {
+            cout << "Metrique du SLA correspondant inexistant" << endl;
+            cout << qSELECT_M_SLA << endl;
+            exit(0);
+        }
 
-                lengths = mysql_fetch_lengths(rSLA);
-
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération du nouvel ID
-                    sprintf(SLA, "%.*s ", (int)lengths[m], row_SLA[m] ? row_SLA[m] : "NULL");
-
-                }
-            }
-        } while (mysql_num_rows(rSLA) != 0); //Jusqu'à ce que la métrique existe
+        mysql_free_result(RES_NEW_M_SLA);
     }
-    mysql_free_result(rSLA);
 
-    M_SLA = SLA;
+    M_SLA = rM_SLA;
+
+    mysql_free_result(RES_M_SLA);
 }
 
 void vm::setguestOSCustomization(std::string VMguestOSCustomization)
@@ -534,195 +544,200 @@ void vm::setguestOSCustomization(std::string VMguestOSCustomization)
     guestOSCustomization = VMguestOSCustomization;
 }
 
-void vm::setM_HWVersion(MYSQL& connexion, std::string VMM_HWVersion)
+void vm::setM_HWVersion(MYSQL* connexion, std::string VMM_HWVersion)
 {
-    char HWVersion[300] = "";
-    char qHWVersion[500] = "";
-    char qIN[500] = "";
+    /***** SELECT ID_metrics *****/
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qHWVersion, "SELECT ID_metrics FROM metrics where type_metrics = 'HWVersion' AND correspondence_metrics = '%s';", VMM_HWVersion.c_str());
+    char qSELECT_M_HWVersion[500] = "";
+    char rM_HWVersion[500] = "";
 
-    mysql_query(&connexion, qHWVersion);
+    sprintf(qSELECT_M_HWVersion, "SELECT ID_metrics FROM metrics where type_metrics = 'HWVersion' AND correspondence_metrics = '%s';", VMM_HWVersion.c_str());
+    mysql_query(connexion, qSELECT_M_HWVersion);
 
-    MYSQL_RES* rHWVersion = mysql_use_result(&connexion);
-    MYSQL_ROW row_HWVersion;
+    MYSQL_RES* RES_M_HWVersion = mysql_use_result(connexion);
+    MYSQL_ROW ROW_M_HWVersion = NULL;
 
-    while (row_HWVersion = mysql_fetch_row(rHWVersion))
+    while (ROW_M_HWVersion = mysql_fetch_row(RES_M_HWVersion))
     {
-        unsigned long* lengths = mysql_fetch_lengths(rHWVersion);
+        unsigned long* L_M_HWVersion = mysql_fetch_lengths(RES_M_HWVersion);
 
-        for (int m = 0; m < 1; m++)
+        for (int i = 0; i < 1; i++)
+            sprintf(rM_HWVersion, "%.*s", (int)L_M_HWVersion[i], ROW_M_HWVersion[i] ? ROW_M_HWVersion[i] : "NULL");
+    }
+
+    if (mysql_num_rows(RES_M_HWVersion) == 0) // SI METRIQUE INEXISTANTE
+    {
+        /***** INSERT METRICS *****/
+
+        char qINSERT_M_HWVersion[500] = "";
+
+        sprintf(qINSERT_M_HWVersion, "INSERT INTO metrics (type_metrics, correspondence_metrics) VALUES ('HWVersion', '%s');", VMM_HWVersion.c_str());
+        mysql_query(connexion, qINSERT_M_HWVersion);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            //Récupération de l'ID
-            sprintf(HWVersion, "%.*s ", (int)lengths[m], row_HWVersion[m] ? row_HWVersion[m] : "NULL");
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_M_HWVersion << endl;
+            exit(0);
         }
-    }
 
-    /***** SI METRIQUE INEXISTANTE *****/
-    if (mysql_num_rows(rHWVersion) == 0)
-    {
-        do
+        /***** SELECT NEW_ID_metrics *****/
+
+        mysql_query(connexion, qSELECT_M_HWVersion);
+
+        MYSQL_RES* RES_NEW_M_HWVersion = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_M_HWVersion = NULL;
+
+        while (ROW_NEW_M_HWVersion = mysql_fetch_row(RES_NEW_M_HWVersion))
         {
-            //Requête insertion de la nouvelle métrique
-            sprintf(qIN, "INSERT INTO metrics (type_metrics, correspondence_metrics) VALUES ('HWVersion', '%s');", VMM_HWVersion.c_str());
+            unsigned long* L_NEW_M_HWVersion = mysql_fetch_lengths(RES_NEW_M_HWVersion);
 
-            mysql_query(&connexion, qIN);
+            for (int i = 0; i < 1; i++)
+                sprintf(rM_HWVersion, "%.*s", (int)L_NEW_M_HWVersion[i], ROW_NEW_M_HWVersion[i] ? ROW_NEW_M_HWVersion[i] : "NULL");
+        }
 
-            //Exécution de la requête de récupératrion de l'ID de la nouvelle métrique
-            while ((row_HWVersion = mysql_fetch_row(rHWVersion)))
-            {
-                unsigned long* lengths;
+        if (mysql_num_rows(RES_NEW_M_HWVersion) == 0) // SI REQUETE VIDE
+        {
+            cout << "Metrique du HWVersion correspondant inexistant" << endl;
+            cout << qSELECT_M_HWVersion << endl;
+            exit(0);
+        }
 
-                lengths = mysql_fetch_lengths(rHWVersion);
-
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération du nouvel ID
-                    sprintf(HWVersion, "%.*s ", (int)lengths[m], row_HWVersion[m] ? row_HWVersion[m] : "NULL");
-
-                }
-            }
-        } while (mysql_num_rows(rHWVersion) != 0); //Jusqu'à ce que la métrique existe
+        mysql_free_result(RES_NEW_M_HWVersion);
     }
-    mysql_free_result(rHWVersion);
 
-    M_HWVersion = HWVersion;
+    M_HWVersion = rM_HWVersion;
+
+    mysql_free_result(RES_M_HWVersion);
 }
 
-void vm::UP(MYSQL& connexion)
+void vm::UP(MYSQL* connexion)
 {
-    char vm[300] = "";
-    char qvm[500] = "";
-        
-    //Vérification de l'existence de la vm
-    sprintf(qvm, "SELECT ID_vm FROM vm WHERE ID_service = '%s' AND UID = '%s' AND vmName = '%s';", ID_service.c_str(), UID.c_str(), vmName.c_str());
+    /***** SELECT ID_vm *****/
 
-    mysql_query(&connexion, qvm);
+    char qSELECT_ID_vm[500] = "";
+    char rID_vm[500] = "";
 
-    MYSQL_RES* rvm = mysql_use_result(&connexion);        
-    MYSQL_ROW row_vm;
+    sprintf(qSELECT_ID_vm, "SELECT ID_vm FROM vm WHERE ID_service = '%s' AND vmName = '%s';", ID_service.c_str(), vmName.c_str());
+    mysql_query(connexion, qSELECT_ID_vm);
 
-    while (row_vm = mysql_fetch_row(rvm))
+    MYSQL_RES* RES_ID_vm = mysql_use_result(connexion);
+    MYSQL_ROW ROW_ID_vm = NULL;
+
+    while (ROW_ID_vm = mysql_fetch_row(RES_ID_vm))
     {
-        unsigned long* lengths = mysql_fetch_lengths(rvm);
+        unsigned long* L_ID_vm = mysql_fetch_lengths(RES_ID_vm);
 
-        for (int m = 0; m < 1; m++)
+        for (int i = 0; i < 1; i++)
+            sprintf(rID_vm, "%.*s", (int)L_ID_vm[i], ROW_ID_vm[i] ? ROW_ID_vm[i] : "NULL");
+    }
+
+    if (mysql_num_rows(RES_ID_vm) == 0) // SI VM INEXISTANTE
+    {
+        /***** INSERT VM *****/
+
+        char qINSERT_VM[500] = "";
+
+        sprintf(qINSERT_VM, "INSERT INTO vm (ID_service, UUID, UID, M_OS, vmName, hostName, M_SLA, guestOSCustomization, M_HWVersion, vmware_Tools, current) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '1');", ID_service.c_str(), UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str());
+        mysql_query(connexion, qINSERT_VM);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            //Récupération des données
-            sprintf(vm, "%.*s ", (int)lengths[m], row_vm[m] ? row_vm[m] : "NULL");
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_VM << endl;
+            exit(0);
+        }
+
+        /***** SELECT NEW_ID_vm *****/
+
+        mysql_query(connexion, qSELECT_ID_vm);
+
+        MYSQL_RES* RES_NEW_ID_vm = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_ID_vm = NULL;
+
+        while (ROW_NEW_ID_vm = mysql_fetch_row(RES_NEW_ID_vm))
+        {
+            unsigned long* L_NEW_ID_vm = mysql_fetch_lengths(RES_NEW_ID_vm);
+
+            for (int i = 0; i < 1; i++)
+                sprintf(rID_vm, "%.*s", (int)L_NEW_ID_vm[i], ROW_NEW_ID_vm[i] ? ROW_NEW_ID_vm[i] : "NULL");
+        }
+
+        if (mysql_num_rows(RES_NEW_ID_vm) == 0) // SI REQUETE VIDE
+        {
+            cout << "VM correspondante inexistante" << endl;
+            cout << qSELECT_ID_vm << endl;
+            exit(0);
+        }
+
+        mysql_free_result(RES_NEW_ID_vm);
+
+
+        /***** SELECT QUANTITY *****/
+
+        char qSELECT_QUANTITY[500] = "";
+        char rQUANTITY[500] = "";
+
+        sprintf(qSELECT_QUANTITY, "SELECT service.quantity FROM client JOIN service ON(client.ID_client = service.ID_client) JOIN vm ON(service.ID_service = vm.ID_service) JOIN metrics ON(service.M_description_service = metrics.ID_metrics) WHERE correspondence_metrics = 'vCloud' AND ID_vm = '%s';", rID_vm);
+        mysql_query(connexion, qSELECT_QUANTITY);
+
+        MYSQL_RES* RES_QUANTITY = mysql_use_result(connexion);
+        MYSQL_ROW ROW_QUANTITY = NULL;
+
+        while (ROW_QUANTITY = mysql_fetch_row(RES_QUANTITY))
+        {
+            unsigned long* L_QUANTITY = mysql_fetch_lengths(RES_QUANTITY);
+
+            for (int i = 0; i < 1; i++)
+                sprintf(rQUANTITY, "%.*s", (int)L_QUANTITY[i], ROW_QUANTITY[i] ? ROW_QUANTITY[i] : "NULL");
+        }
+
+        if (mysql_num_rows(RES_QUANTITY) == 0) // SI REQUETE VIDE
+        {
+            cout << "Quantité de la VM correspondante inexistant" << endl;
+            cout << qSELECT_QUANTITY << endl;
+            exit(0);
+        }
+
+        mysql_free_result(RES_QUANTITY);
+
+        /***** INCREMENT & UPDATE QUANTITY *****/
+
+        int QuantityINCR = atoi(rQUANTITY);
+        QuantityINCR++;
+
+        char qUPDATE_QUANTITY[500] = "";
+
+        sprintf(qUPDATE_QUANTITY, "UPDATE service JOIN client ON(client.ID_client = service.ID_client) JOIN vm ON(service.ID_service = vm.ID_service) JOIN metrics ON(service.M_description_service = metrics.ID_metrics) SET service.quantity = '%d' WHERE correspondence_metrics = 'vCloud' AND ID_vm = '%s';", QuantityINCR, rID_vm);
+        mysql_query(connexion, qUPDATE_QUANTITY);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
+        {
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qUPDATE_QUANTITY << endl;
+            exit(0);
+        }
+    }
+    else
+    {
+        /***** UPDATE VM *****/
+
+        char qUPDATE_VM[500] = "";
+
+        sprintf(qUPDATE_VM, "UPDATE vm SET UUID = '%s', UID = '%s', M_OS = '%s', vmName = '%s', hostName = '%s', M_SLA = '%s', guestOSCustomization = '%s', M_HWVersion = '%s', vmware_Tools = '%s', current = '1' WHERE ID_vm = '%s';", UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str(), rID_vm);
+        mysql_query(connexion, qUPDATE_VM);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
+        {
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qUPDATE_VM << endl;
+            exit(0);
         }
     }
 
-    /***** SI VM INEXISTANTE *****/
-    if (mysql_num_rows(rvm) == 0)
-    {
-        do
-        {
-            //Requête insertion de la nouvelle vm
+    ID_vm = rID_vm;
 
-            char qIN[500] = "";
-
-            sprintf(qIN, "INSERT INTO vm (ID_service, UUID, UID, M_OS, vmName, hostName, M_SLA, guestOSCustomization, M_HWVersion, vmware_Tools, current) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '1');", ID_service.c_str(), UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str());
-
-            mysql_query(&connexion, qIN);
-
-
-            /***** RECUPERATION DE L'ID DE LA VM CREEE *****/
-
-            char qNvm[500] = "";
-
-            sprintf(qNvm, "SELECT ID_vm FROM vm WHERE ID_service = '%s' AND UUID = '%s' AND UID = '%s' AND M_OS = '%s' AND vmName = '%s' AND hostName = '%s' AND M_SLA = '%s' AND guestOSCustomization = '%s' AND M_HWVersion = '%s' AND vmware_Tools = '%s' AND current = '1';", ID_service.c_str(), UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str());
-
-            mysql_query(&connexion, qNvm);
-
-            MYSQL_RES* rNvm = mysql_use_result(&connexion);
-            MYSQL_ROW row_Nvm;
-
-            while (row_Nvm = mysql_fetch_row(rNvm))
-            {
-                unsigned long* lengths_Nvm = mysql_fetch_lengths(rNvm);
-
-                for (int v = 0; v < 1; v++)
-                {
-                    //Récupération des données
-                    sprintf(vm, "%.*s ", (int)lengths_Nvm[v], row_Nvm[v] ? row_Nvm[v] : "NULL");
-                }
-            }
-
-            /***** RECUPERATION DU NOMBRE DE VM DU CLIENT ASSOCIE *****/
-                
-            char qSELECTQuantity[500] = "";
-            char Quantity[500] = "";
-
-            sprintf(qSELECTQuantity, "SELECT service.quantity FROM client JOIN service ON(client.ID_client = service.ID_client) JOIN vm ON(service.ID_service = vm.ID_service) JOIN metrics ON(service.M_description_service = metrics.ID_metrics) WHERE correspondence_metrics = 'vCloud' AND ID_vm = '%s';", vm);
-
-            mysql_query(&connexion, qSELECTQuantity);
-
-            MYSQL_RES* rQuantity = mysql_use_result(&connexion);
-            MYSQL_ROW row_Quantity;
-
-            while (row_Quantity = mysql_fetch_row(rQuantity))
-            {
-                unsigned long* lengths = mysql_fetch_lengths(rQuantity);
-
-                for (int n = 0; n < 1; n++)
-                {
-                    //Récupération valeur
-                    sprintf(Quantity, "%.*s ", (int)lengths[n], row_Quantity[n] ? row_Quantity[n] : "NULL");
-                }
-            }                
-
-            /***** INCREMENTATION ET INSERTION DE LA QUANTITE *****/
-                                
-            char qINCRQuantity[500] = "";
-
-            int quantite = atoi(Quantity);
-            quantite++;
-            string QuantityINCR = to_string(quantite);
-                                
-            sprintf(qINCRQuantity, "UPDATE service JOIN client ON(client.ID_client = service.ID_client) JOIN vm ON(service.ID_service = vm.ID_service) JOIN metrics ON(service.M_description_service = metrics.ID_metrics) SET service.quantity = '%s' WHERE correspondence_metrics = 'vCloud' AND ID_vm = '%s';", QuantityINCR.c_str(), vm);
-
-            mysql_query(&connexion, qINCRQuantity);
-
-            mysql_free_result(rNvm);
-            mysql_free_result(rQuantity);
-                                                
-        } while (mysql_num_rows(rvm) != 0); //Jusqu'à ce que la vm existe
-    }
-    else // mettre à jour les données
-    {
-        char qUPDATE[500] = "";
-        char qID_vm[500] = "";
-
-        // Acquisition de l'ID de la vm
-        sprintf(qID_vm, "SELECT ID_vm FROM vm WHERE UID = '%s' AND vmName = '%s';",UID.c_str(), vmName.c_str());
-
-        mysql_query(&connexion, qID_vm);
-
-        MYSQL_RES* rID_vm = mysql_use_result(&connexion);            
-        MYSQL_ROW row_vm;
-
-        while (row_vm = mysql_fetch_row(rID_vm))
-        {
-            unsigned long* lengths = mysql_fetch_lengths(rID_vm);
-
-            for (int m = 0; m < 1; m++)
-            {
-                //Récupération ID
-                sprintf(vm, "%.*s ", (int)lengths[m], row_vm[m] ? row_vm[m] : "NULL");
-            }
-        }
-
-        sprintf(qUPDATE, "UPDATE vm SET UUID = '%s', UID = '%s', M_OS = '%s', vmName = '%s', hostName = '%s', M_SLA = '%s', guestOSCustomization = '%s', M_HWVersion = '%s', vmware_Tools = '%s', current = '1' WHERE ID_vm = '%s';", UUID.c_str(), UID.c_str(), M_OS.c_str(), vmName.c_str(), hostName.c_str(), M_SLA.c_str(), guestOSCustomization.c_str(), M_HWVersion.c_str(), vmware_Tools.c_str(), vm);
-
-        mysql_query(&connexion, qUPDATE);
-
-        mysql_free_result(rID_vm);
-    }
-    mysql_free_result(rvm);
-
-    ID_vm = vm;
+    mysql_free_result(RES_ID_vm);
 }
 
 string vm::getID_vm()
@@ -778,79 +793,87 @@ void report::setPowerOn(std::string reportPowerOn)
     PowerOn = reportPowerOn;
 }
 
-void report::UP(MYSQL &connexion)
+void report::UP(MYSQL* connexion, disk Ldisk, ram Lram, cpu Lcpu, backup Lbackup, network Lnetwork)
 {
-    char report[300] = "";
-    char qreport[500] = "";
-    char qNEWreport[500] = "";
-    char qIN[500] = "";
+    /***** SELECT ID_REPORT *****/
 
-    //Vérification de l'existence du rapport
-    sprintf(qreport, "SELECT ID_report FROM report WHERE ID_vm = '%s' AND RptDateHour = '%s' AND vApp = '%s' AND PowerOn = '%s';", ID_vm.c_str(), RptDateHour.c_str(), vApp.c_str(), PowerOn.c_str());
-    mysql_query(&connexion, qreport);
+    char qSELECT_ID_REPORT[500] = "";
+    char rID_REPORT[500] = "";
 
-    MYSQL_RES* rreport = mysql_use_result(&connexion);
-    MYSQL_ROW row_report;
+    sprintf(qSELECT_ID_REPORT, "SELECT ID_report FROM report WHERE ID_vm = '%s' AND RptDateHour = '%s' AND vApp = '%s' AND PowerOn = '%s';", ID_vm.c_str(), RptDateHour.c_str(), vApp.c_str(), PowerOn.c_str());
+    mysql_query(connexion, qSELECT_ID_REPORT);
 
-    while (row_report = mysql_fetch_row(rreport))
+    MYSQL_RES* RES_ID_REPORT = mysql_use_result(connexion);
+    MYSQL_ROW ROW_ID_REPORT = NULL;
+
+    while (ROW_ID_REPORT = mysql_fetch_row(RES_ID_REPORT))
     {
-        unsigned long* lengths = mysql_fetch_lengths(rreport);
+        unsigned long* L_ID_REPORT = mysql_fetch_lengths(RES_ID_REPORT);
 
-        for (int m = 0; m < 1; m++)
+        for (int i = 0; i < 1; i++)
+            sprintf(rID_REPORT, "%.*s", (int)L_ID_REPORT[i], ROW_ID_REPORT[i] ? ROW_ID_REPORT[i] : "NULL");
+    }
+
+    if (mysql_num_rows(RES_ID_REPORT) == 0) // SI REPORT INEXISTANT
+    {
+        /***** INSERT REPORT *****/
+
+        char qINSERT_REPORT[500] = "";
+
+        sprintf(qINSERT_REPORT, "INSERT INTO report (ID_vm, RptDateHour, vApp, PowerOn) VALUES ('%s', '%s', '%s', '%s');", ID_vm.c_str(), RptDateHour.c_str(), vApp.c_str(), PowerOn.c_str());
+        mysql_query(connexion, qINSERT_REPORT);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            //Récupération des données
-            sprintf(report, "%.*s ", (int)lengths[m], row_report[m] ? row_report[m] : "NULL");
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_REPORT << endl;
+            exit(0);
         }
-    }
 
-    /****** SI RAPPORT INEXISTANT *****/
-    if (mysql_num_rows(rreport) == 0)
-    {
-        do
+        /***** SELECT NEW_ID_REPORT *****/
+
+        mysql_query(connexion, qSELECT_ID_REPORT);
+
+        MYSQL_RES* RES_NEW_ID_REPORT = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_ID_REPORT = NULL;
+
+        while (ROW_NEW_ID_REPORT = mysql_fetch_row(RES_NEW_ID_REPORT))
         {
-            //Requête insertion du nouveau rapport
+            unsigned long* L_NEW_ID_REPORT = mysql_fetch_lengths(RES_NEW_ID_REPORT);
 
-            sprintf(qIN, "INSERT INTO report (ID_vm, RptDateHour, vApp, PowerOn) VALUES ('%s', '%s', '%s', '%s');", ID_vm.c_str(), RptDateHour.c_str(), vApp.c_str(), PowerOn.c_str());
-            mysql_query(&connexion, qIN);
+            for (int i = 0; i < 1; i++)
+                sprintf(rID_REPORT, "%.*s", (int)L_NEW_ID_REPORT[i], ROW_NEW_ID_REPORT[i] ? ROW_NEW_ID_REPORT[i] : "NULL");
+        }
 
+        if (mysql_num_rows(RES_NEW_ID_REPORT) == 0) // SI REQUETE VIDE
+        {
+            cout << "Rapport correspondant inexistant" << endl;
+            cout << qSELECT_ID_REPORT << endl;
+            exit(0);
+        }
 
-            //Acquisition de l'ID du rapport créé
+        mysql_free_result(RES_NEW_ID_REPORT);
 
-            sprintf(qNEWreport, "SELECT ID_report FROM report WHERE ID_vm = '%s' AND RptDateHour = '%s' AND vApp = '%s' AND PowerOn = '%s';", ID_vm.c_str(), RptDateHour.c_str(), vApp.c_str(), PowerOn.c_str());
-            mysql_query(&connexion, qNEWreport);
+        /***** APPEL DES FONCTIONS ****/
 
-            MYSQL_RES* RESNEWreport = mysql_use_result(&connexion);
-            MYSQL_ROW row_report;
+        Ldisk.disk::UP(connexion, rID_REPORT);
 
-            while (row_report = mysql_fetch_row(RESNEWreport))
-            {
-                unsigned long* lengths = mysql_fetch_lengths(RESNEWreport);
+        Lram.ram::UP(connexion, rID_REPORT);
 
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération valeur
-                    sprintf(report, "%.*s ", (int)lengths[m], row_report[m] ? row_report[m] : "NULL");
-                }                    
-            }
+        Lcpu.cpu::UP(connexion, rID_REPORT);
 
-            mysql_free_result(RESNEWreport);
+        Lbackup.backup::UP(connexion, rID_REPORT);
 
-        } while (mysql_num_rows(rreport) != 0); //Jusqu'à ce que le rapport existe
+        Lnetwork.network::UP(connexion, rID_REPORT);
     }
-    mysql_free_result(rreport);
 
-    ID_report = report;
-}
-
-string report::getID_report()
-{
-    return ID_report;
+    mysql_free_result(RES_ID_REPORT);
 }
 
 
 // DISK
 
-disk::disk() : ID_report(""), capacity_disk(""), M_type_disk(""), M_unit("")
+disk::disk() : capacity_disk(""), M_type_disk(""), M_unit("")
 {
 }
 
@@ -858,14 +881,9 @@ disk::~disk()
 {
 }
 
-void disk::setID_report(report& Lreport)
+void disk::setcapacity_disk(MYSQL* connexion, std::string diskcapacity_disk)
 {
-    ID_report = Lreport.getID_report();
-}
-
-void disk::setcapacity_disk(MYSQL& connexion, std::string diskcapacity_disk)
-{
-    float capacity = stof(diskcapacity_disk);
+    int capacity = stoi(diskcapacity_disk);
     string disk_unit = "";
 
     if (capacity <= 0)
@@ -883,136 +901,127 @@ void disk::setcapacity_disk(MYSQL& connexion, std::string diskcapacity_disk)
         disk_unit = "Go";
     }
 
-    char unit[300] = "";
-    char qunit[500] = "";
+    capacity_disk = to_string(capacity);
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qunit, "SELECT ID_metrics FROM metrics where type_metrics = 'unit' AND correspondence_metrics = '%s';", disk_unit.c_str());
+    /***** SELECT ID_metrics *****/
 
-    mysql_query(&connexion, qunit);
+    char qSELECT_ID_metrics[500] = "";
+    char rID_metrics[500] = "";
 
-    MYSQL_RES* runit = mysql_use_result(&connexion);
-    MYSQL_ROW row_unit;
+    sprintf(qSELECT_ID_metrics, "SELECT ID_metrics FROM metrics where type_metrics = 'unit' AND correspondence_metrics = '%s';", disk_unit.c_str());
+    mysql_query(connexion, qSELECT_ID_metrics);
 
-    while (row_unit = mysql_fetch_row(runit))
+    MYSQL_RES* RES_ID_metrics = mysql_use_result(connexion);
+    MYSQL_ROW ROW_ID_metrics = NULL;
+
+    while (ROW_ID_metrics = mysql_fetch_row(RES_ID_metrics))
     {
-        unsigned long* lengths = mysql_fetch_lengths(runit);
+        unsigned long* L_ID_metrics = mysql_fetch_lengths(RES_ID_metrics);
 
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération de l'ID
-            sprintf(unit, "%.*s ", (int)lengths[m], row_unit[m] ? row_unit[m] : "NULL");
-        }
+        for (int i = 0; i < 1; i++)
+            sprintf(rID_metrics, "%.*s", (int)L_ID_metrics[i], ROW_ID_metrics[i] ? ROW_ID_metrics[i] : "NULL");
     }
 
-    M_unit = unit;
-        
-    int capacitINT = capacity;
-    capacity_disk = to_string(capacitINT);
+    if (mysql_num_rows(RES_ID_metrics) == 0) // SI REQUETE VIDE
+    {
+        cout << "Metrique de la capacité du disk correspondant inexistant" << endl;
+        cout << qSELECT_ID_metrics << endl;
+        exit(0);
+    }
 
-    mysql_free_result(runit);
+    M_unit = rID_metrics;
+
+    mysql_free_result(RES_ID_metrics);
 }
 
-void disk::setM_type_disk(MYSQL& connexion, std::string diskM_type_disk)
+void disk::setM_type_disk(MYSQL* connexion, std::string diskM_type_disk)
 {
-    char type_disk[300] = "";
-    char qtype_disk[500] = "";
-    char qIN[500] = "";
+    /***** SELECT ID_metrics *****/
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qtype_disk, "SELECT ID_metrics FROM metrics where type_metrics = 'type_disk' AND correspondence_metrics = '%s';", diskM_type_disk.c_str());
+    char qSELECT_M_type_disk[500] = "";
+    char rM_type_disk[500] = "";
 
-    mysql_query(&connexion, qtype_disk);
+    sprintf(qSELECT_M_type_disk, "SELECT ID_metrics FROM metrics where type_metrics = 'type_disk' AND correspondence_metrics = '%s';", diskM_type_disk.c_str());
+    mysql_query(connexion, qSELECT_M_type_disk);
 
-    MYSQL_RES* rtype_disk = mysql_use_result(&connexion);
-    MYSQL_ROW row_type_disk;
+    MYSQL_RES* RES_M_type_disk = mysql_use_result(connexion);
+    MYSQL_ROW ROW_M_type_disk = NULL;
 
-    while (row_type_disk = mysql_fetch_row(rtype_disk))
+    while (ROW_M_type_disk = mysql_fetch_row(RES_M_type_disk))
     {
-        unsigned long* lengths = mysql_fetch_lengths(rtype_disk);
+        unsigned long* L_M_type_disk = mysql_fetch_lengths(RES_M_type_disk);
 
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération de l'ID
-            sprintf(type_disk, "%.*s ", (int)lengths[m], row_type_disk[m] ? row_type_disk[m] : "NULL");
-        }
-    }    
-
-    /***** SI METRIQUE INEXISTANTE *****/
-    if (mysql_num_rows(rtype_disk) == 0)
-    {
-        do
-        {
-            //Requête insertion de la nouvelle métrique
-            sprintf(qIN, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('type_disk', '%s');", diskM_type_disk.c_str());
-
-            mysql_query(&connexion, qIN);
-
-            //Récupératrion de l'ID de la nouvelle métrique
-            while ((row_type_disk = mysql_fetch_row(rtype_disk)))
-            {
-                unsigned long* lengths;
-
-                lengths = mysql_fetch_lengths(rtype_disk);
-
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération du nouvel ID
-                    sprintf(type_disk, "%.*s ", (int)lengths[m], row_type_disk[m] ? row_type_disk[m] : "NULL");
-
-                }
-            }
-        } while (mysql_num_rows(rtype_disk) != 0); //Jusqu'à ce que la métrique existe
+        for (int i = 0; i < 1; i++)
+            sprintf(rM_type_disk, "%.*s", (int)L_M_type_disk[i], ROW_M_type_disk[i] ? ROW_M_type_disk[i] : "NULL");
     }
-    mysql_free_result(rtype_disk);
 
-    M_type_disk = type_disk;
+    if (mysql_num_rows(RES_M_type_disk) == 0) // SI METRIQUE INEXISTANTE
+    {
+        /***** INSERT METRICS *****/
+
+        char qINSERT_M_type_disk[500] = "";
+
+        sprintf(qINSERT_M_type_disk, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('type_disk', '%s');", diskM_type_disk.c_str());
+        mysql_query(connexion, qINSERT_M_type_disk);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
+        {
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_M_type_disk << endl;
+            exit(0);
+        }
+
+        /***** SELECT NEW_ID_metrics *****/
+
+        mysql_query(connexion, qSELECT_M_type_disk);
+
+        MYSQL_RES* RES_NEW_M_type_disk = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_M_type_disk = NULL;
+
+        while (ROW_NEW_M_type_disk = mysql_fetch_row(RES_NEW_M_type_disk))
+        {
+            unsigned long* L_NEW_M_type_disk = mysql_fetch_lengths(RES_NEW_M_type_disk);
+
+            for (int i = 0; i < 1; i++)
+                sprintf(rM_type_disk, "%.*s", (int)L_NEW_M_type_disk[i], ROW_NEW_M_type_disk[i] ? ROW_NEW_M_type_disk[i] : "NULL");
+        }
+
+        if (mysql_num_rows(RES_NEW_M_type_disk) == 0) // SI REQUETE VIDE
+        {
+            cout << "Metrique du type du disk correspondant inexistante" << endl;
+            cout << qSELECT_M_type_disk << endl;
+            exit(0);
+        }
+
+        mysql_free_result(RES_NEW_M_type_disk);
+    }
+
+    M_type_disk = rM_type_disk;
+
+    mysql_free_result(RES_M_type_disk);
 }
 
-void disk::UP(MYSQL& connexion)
+void disk::UP(MYSQL* connexion, char* rreport)
 {
-    char disk[300] = "";
-    char qdisk[500] = "";
-    char qIN[500] = "";
+    /***** INSERT disk *****/
 
-    //Vérification de l'inexistence du disk
-    sprintf(qdisk, "SELECT ID_disk FROM disk WHERE ID_report = '%s' AND capacity_disk = '%s' AND M_type_disk = '%s' AND M_unit = '%s'; ", ID_report.c_str(), capacity_disk.c_str(), M_type_disk.c_str(), M_unit.c_str());
+    char qINSERT_disk[500] = "";
 
-    mysql_query(&connexion, qdisk);
+    sprintf(qINSERT_disk, "INSERT INTO disk (ID_report, capacity_disk, M_type_disk, M_unit) VALUES ('%s', '%s', '%s', '%s');", rreport, capacity_disk.c_str(), M_type_disk.c_str(), M_unit.c_str());
+    mysql_query(connexion, qINSERT_disk);
 
-    MYSQL_RES* rdisk = mysql_use_result(&connexion);
-    MYSQL_ROW row_disk;
-
-    while (row_disk = mysql_fetch_row(rdisk))
+    if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
     {
-        unsigned long* lengths = mysql_fetch_lengths(rdisk);
-
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération des données
-            sprintf(disk, "%.*s ", (int)lengths[m], row_disk[m] ? row_disk[m] : "NULL");
-        }
+        fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+        cout << qINSERT_disk << endl;
+        exit(0);
     }
-
-    /***** SI DISK INEXISTANT *****/
-    if (mysql_num_rows(rdisk) == 0)
-    {
-        do
-        {
-            //Requête insertion du nouveau disk
-
-            sprintf(qIN, "INSERT INTO disk (ID_report, capacity_disk, M_type_disk, M_unit) VALUES ('%s', '%s', '%s', '%s');", ID_report.c_str(), capacity_disk.c_str(), M_type_disk.c_str(), M_unit.c_str());
-
-            mysql_query(&connexion, qIN);
-        } while (mysql_num_rows(rdisk) != 0); //Jusqu'à ce que le disk existe
-    }
-    mysql_free_result(rdisk);
 }
 
 
 // RAM
 
-ram::ram() : ID_report(""), capacity_ram(""), M_unit("")
+ram::ram() : capacity_ram(""), M_unit("")
 {
 }
 
@@ -1020,14 +1029,9 @@ ram::~ram()
 {
 }
 
-void ram::setID_report(report& Lreport)
+void ram::setcapacity_ram(MYSQL* connexion, std::string ramcapacity_ram)
 {
-    ID_report = Lreport.getID_report();
-}
-
-void ram::setcapacity_ram(MYSQL& connexion, std::string ramcapacity_ram)
-{
-    float capacity = stof(ramcapacity_ram);
+    int capacity = stoi(ramcapacity_ram);
     string ram_unit = "";
 
     if (capacity <= 0)
@@ -1045,79 +1049,60 @@ void ram::setcapacity_ram(MYSQL& connexion, std::string ramcapacity_ram)
         ram_unit = "Go";
     }
 
-    char unit[300] = "";
-    char qunit[500] = "";
+    capacity_ram = to_string(capacity);
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qunit, "SELECT ID_metrics FROM metrics where type_metrics = 'unit' AND correspondence_metrics = '%s';", ram_unit.c_str());
+    /***** SELECT ID_metrics *****/
 
-    mysql_query(&connexion, qunit);
+    char qSELECT_ID_metrics[500] = "";
+    char rID_metrics[500] = "";
 
-    MYSQL_RES* runit = mysql_use_result(&connexion);
-    MYSQL_ROW row_unit;
+    sprintf(qSELECT_ID_metrics, "SELECT ID_metrics FROM metrics where type_metrics = 'unit' AND correspondence_metrics = '%s';", ram_unit.c_str());
+    mysql_query(connexion, qSELECT_ID_metrics);
 
-    while (row_unit = mysql_fetch_row(runit))
+    MYSQL_RES* RES_ID_metrics = mysql_use_result(connexion);
+    MYSQL_ROW ROW_ID_metrics = NULL;
+
+    while (ROW_ID_metrics = mysql_fetch_row(RES_ID_metrics))
     {
-        unsigned long* lengths = mysql_fetch_lengths(runit);
+        unsigned long* L_ID_metrics = mysql_fetch_lengths(RES_ID_metrics);
 
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération de l'ID
-            sprintf(unit, "%.*s ", (int)lengths[m], row_unit[m] ? row_unit[m] : "NULL");
-        }
+        for (int i = 0; i < 1; i++)
+            sprintf(rID_metrics, "%.*s", (int)L_ID_metrics[i], ROW_ID_metrics[i] ? ROW_ID_metrics[i] : "NULL");
     }
-    M_unit = unit;
 
-    int capacitINT = capacity;
-    capacity_ram = to_string(capacitINT);
+    if (mysql_num_rows(RES_ID_metrics) == 0) // SI REQUETE VIDE
+    {
+        cout << "Metrique de la capacité da la ram correspondante inexistante" << endl;
+        cout << qSELECT_ID_metrics << endl;
+        exit(0);
+    }
 
-    mysql_free_result(runit);
+    M_unit = rID_metrics;
+
+    mysql_free_result(RES_ID_metrics);
 }
 
-void ram::UP(MYSQL& connexion)
+void ram::UP(MYSQL* connexion, char* rreport)
 {
-    char ram[300] = "";
-    char qram[500] = "";
-    char qIN[500] = "";
+    /***** INSERT ram *****/
 
-    //Vérification de l'existence de la ram
-    sprintf(qram, "SELECT ID_ram FROM ram WHERE ID_report = '%s' AND capacity_ram = '%s' AND M_unit = '%s';", ID_report.c_str(), capacity_ram.c_str(), M_unit.c_str());
+    char qINSERT_ram[500] = "";
 
-    mysql_query(&connexion, qram);
+    sprintf(qINSERT_ram, "INSERT INTO ram (ID_report, capacity_ram, M_unit) VALUES ('%s', '%s', '%s');", rreport, capacity_ram.c_str(), M_unit.c_str());
+    mysql_query(connexion, qINSERT_ram);
 
-    MYSQL_RES* rram = mysql_use_result(&connexion);
-    MYSQL_ROW row_ram;
-
-    while (row_ram = mysql_fetch_row(rram))
+    if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
     {
-        unsigned long* lengths = mysql_fetch_lengths(rram);
-
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération des données
-            sprintf(ram, "%.*s ", (int)lengths[m], row_ram[m] ? row_ram[m] : "NULL");
-        }
+        fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+        cout << qINSERT_ram << endl;
+        exit(0);
     }
-
-    /***** SI RAM INEXISTANT *****/
-    if (mysql_num_rows(rram) == 0)
-    {
-        do
-        {
-            //Requête insertion de la nouvelle ram
-
-            sprintf(qIN, "INSERT INTO ram (ID_report, capacity_ram, M_unit) VALUES ('%s', '%s', '%s');", ID_report.c_str(), capacity_ram.c_str(), M_unit.c_str());
-
-            mysql_query(&connexion, qIN);
-        } while (mysql_num_rows(rram) != 0); //Jusqu'à ce que la ram existe
-    }
-    mysql_free_result(rram);
 }
 
 
 // CPU
 
-cpu::cpu() : ID_report(""), nbrCore(""), M_model_cpu("")
+cpu::cpu() : nbrCore(""), M_model_cpu("")
 {
 }
 
@@ -1125,118 +1110,101 @@ cpu::~cpu()
 {
 }
 
-void cpu::setID_report(report& Lreport)
-{
-    ID_report = Lreport.getID_report();
-}
-
 void cpu::setnbrCore(std::string cpunbrCore)
 {
     int CorINT = stoi(cpunbrCore); //conversion vers INT pour éviter problèmes d'insertion de nombre à virgule
 
-    string CorSTRING = to_string(CorINT); //conversion pour adaptation à la classe
-
-    nbrCore = CorSTRING;
+    nbrCore = to_string(CorINT); //conversion pour adaptation à la classe
 }
 
-void cpu::setM_model_cpu(MYSQL& connexion, std::string cpuM_model_cpu)
+void cpu::setM_model_cpu(MYSQL* connexion, std::string cpuM_model_cpu)
 {
-    char model_cpu[300] = "";
-    char qmodel_cpu[500] = "";
-    char qIN[500] = "";
+    /***** SELECT ID_metrics *****/
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qmodel_cpu, "SELECT ID_metrics FROM metrics where type_metrics = 'model_cpu' AND correspondence_metrics = '%s';", cpuM_model_cpu.c_str());
+    char qSELECT_M_model_cpu[500] = "";
+    char rM_model_cpu[500] = "";
 
-    mysql_query(&connexion, qmodel_cpu);
+    sprintf(qSELECT_M_model_cpu, "SELECT ID_metrics FROM metrics where type_metrics = 'model_cpu' AND correspondence_metrics = '%s';", cpuM_model_cpu.c_str());
+    mysql_query(connexion, qSELECT_M_model_cpu);
 
-    MYSQL_RES* rmodel_cpu = mysql_use_result(&connexion);
-    MYSQL_ROW row_model_cpu;
+    MYSQL_RES* RES_M_model_cpu = mysql_use_result(connexion);
+    MYSQL_ROW ROW_M_model_cpu = NULL;
 
-    while (row_model_cpu = mysql_fetch_row(rmodel_cpu))
+    while (ROW_M_model_cpu = mysql_fetch_row(RES_M_model_cpu))
     {
-        unsigned long* lengths = mysql_fetch_lengths(rmodel_cpu);
+        unsigned long* L_M_model_cpu = mysql_fetch_lengths(RES_M_model_cpu);
 
-        for (int m = 0; m < 1; m++)
+        for (int i = 0; i < 1; i++)
+            sprintf(rM_model_cpu, "%.*s", (int)L_M_model_cpu[i], ROW_M_model_cpu[i] ? ROW_M_model_cpu[i] : "NULL");
+    }
+
+    if (mysql_num_rows(RES_M_model_cpu) == 0) // SI METRIQUE INEXISTANTE
+    {
+        /***** INSERT METRICS *****/
+
+        char qINSERT_METRICS[500] = "";
+
+        sprintf(qINSERT_METRICS, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('model_cpu', '%s');", cpuM_model_cpu.c_str());
+        mysql_query(connexion, qINSERT_METRICS);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            //Récupération de l'ID
-            sprintf(model_cpu, "%.*s ", (int)lengths[m], row_model_cpu[m] ? row_model_cpu[m] : "NULL");
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_METRICS << endl;
+            exit(0);
         }
-    }
 
-    /***** SI METRIQUE INEXISTANTE *****/
-    if (mysql_num_rows(rmodel_cpu) == 0)
-    {
-        do
+        /***** SELECT NEW_M_model_cpu *****/
+
+        mysql_query(connexion, qSELECT_M_model_cpu);
+
+        MYSQL_RES* RES_NEW_M_model_cpu = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_M_model_cpu = NULL;
+
+        while (ROW_NEW_M_model_cpu = mysql_fetch_row(RES_NEW_M_model_cpu))
         {
-            //Requête insertion de la nouvelle métrique
-            sprintf(qIN, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('model_cpu', '%s');", cpuM_model_cpu.c_str());
+            unsigned long* L_NEW_M_model_cpu = mysql_fetch_lengths(RES_NEW_M_model_cpu);
 
-            mysql_query(&connexion, qIN);
+            for (int i = 0; i < 1; i++)
+                sprintf(rM_model_cpu, "%.*s", (int)L_NEW_M_model_cpu[i], ROW_NEW_M_model_cpu[i] ? ROW_NEW_M_model_cpu[i] : "NULL");
+        }
 
-            //Récupératrion de l'ID de la nouvelle métrique
-            while ((row_model_cpu = mysql_fetch_row(rmodel_cpu)))
-            {
-                unsigned long* lengths = mysql_fetch_lengths(rmodel_cpu);
+        if (mysql_num_rows(RES_NEW_M_model_cpu) == 0) // SI REQUETE VIDE
+        {
+            cout << "Metrique de TODO correspondant inexistant" << endl;
+            cout << qSELECT_M_model_cpu << endl;
+            exit(0);
+        }
 
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération du nouvel ID
-                    sprintf(model_cpu, "%.*s ", (int)lengths[m], row_model_cpu[m] ? row_model_cpu[m] : "NULL");
-
-                }
-            }
-        } while (mysql_num_rows(rmodel_cpu) != 0); //Jusqu'à ce que la métrique existe
+        mysql_free_result(RES_NEW_M_model_cpu);
     }
-    mysql_free_result(rmodel_cpu);
 
-    M_model_cpu = model_cpu;
+    M_model_cpu = rM_model_cpu;
+
+    mysql_free_result(RES_M_model_cpu);
 }
 
-void cpu::UP(MYSQL& connexion)
+void cpu::UP(MYSQL* connexion, char* rreport)
 {
-    char cpu[300] = "";
-    char qcpu[500] = "";
-    char qIN[500] = "";
+    /***** INSERT cpu *****/
 
-    //Vérification de l'existence du cpu
-    sprintf(qcpu, "SELECT ID_cpu FROM cpu WHERE ID_report = '%s' AND M_model_cpu = '%s' AND nbrCore = '%s';", ID_report.c_str(), M_model_cpu.c_str(), nbrCore.c_str());
+    char qINSERT_cpu[500] = "";
 
-    mysql_query(&connexion, qcpu);
+    sprintf(qINSERT_cpu, "INSERT INTO cpu (ID_report, M_model_cpu, nbrCore) VALUES ('%s', '%s', '%s');", rreport, M_model_cpu.c_str(), nbrCore.c_str());
+    mysql_query(connexion, qINSERT_cpu);
 
-    MYSQL_RES* rcpu = mysql_use_result(&connexion);
-    MYSQL_ROW row_cpu;
-
-    while (row_cpu = mysql_fetch_row(rcpu))
+    if (mysql_errno(connexion) != 0) // SI ERREUR REQUETE
     {
-        unsigned long* lengths = mysql_fetch_lengths(rcpu);
-
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération des données
-            sprintf(cpu, "%.*s ", (int)lengths[m], row_cpu[m] ? row_cpu[m] : "NULL");
-        }
+        fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+        cout << qINSERT_cpu << endl;
+        exit(0);
     }
-
-    /***** SI CPU INEXISTANT *****/
-    if (mysql_num_rows(rcpu) == 0)
-    {
-        do
-        {
-            //Requête insertion du nouveau cpu
-
-            sprintf(qIN, "INSERT INTO cpu (ID_report, M_model_cpu, nbrCore) VALUES ('%s', '%s', '%s');", ID_report.c_str(), M_model_cpu.c_str(), nbrCore.c_str());
-
-            mysql_query(&connexion, qIN);
-        } while (mysql_num_rows(rcpu) != 0); //Jusqu'à ce que le cpu existe
-    }
-    mysql_free_result(rcpu);
 }
 
 
 // BACKUP
 
-backup::backup() : ID_report(""), M_type_backup("")
+backup::backup() : M_type_backup("")
 {
 }
 
@@ -1244,118 +1212,99 @@ backup::~backup()
 {
 }
 
-void backup::setID_report(report& Lreport)
+void backup::setM_type_backup(MYSQL* connexion, std::string backupM_type_backup)
 {
-    ID_report = Lreport.getID_report();
+    /***** SELECT M_type_backup *****/
+
+    char qSELECT_M_type_backup[500] = "";
+    char rM_type_backup[500] = "";
+
+    sprintf(qSELECT_M_type_backup, "SELECT ID_metrics FROM metrics where type_metrics = 'type_backup' AND correspondence_metrics = '%s';", backupM_type_backup.c_str());
+    mysql_query(connexion, qSELECT_M_type_backup);
+
+    MYSQL_RES* RES_M_type_backup = mysql_use_result(connexion);
+    MYSQL_ROW ROW_M_type_backup = NULL;
+
+    while (ROW_M_type_backup = mysql_fetch_row(RES_M_type_backup))
+    {
+        unsigned long* L_M_type_backup = mysql_fetch_lengths(RES_M_type_backup);
+
+        for (int i = 0; i < 1; i++)
+            sprintf(rM_type_backup, "%.*s", (int)L_M_type_backup[i], ROW_M_type_backup[i] ? ROW_M_type_backup[i] : "NULL");
+    }
+
+    if (mysql_num_rows(RES_M_type_backup) == 0) // SI METRIQUE INEXISTANTE
+    {
+        /***** INSERT METRICS *****/
+
+        char qINSERT_M_type_backup[500] = "";
+
+        sprintf(qINSERT_M_type_backup, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('type_backup', '%s');", backupM_type_backup.c_str());
+        mysql_query(connexion, qINSERT_M_type_backup);
+
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
+        {
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_M_type_backup << endl;
+            exit(0);
+        }
+
+        /***** SELECT ID_metrics *****/
+
+        mysql_query(connexion, qSELECT_M_type_backup);
+
+        MYSQL_RES* RES_NEW_M_type_backup = mysql_use_result(connexion);
+        MYSQL_ROW ROW_NEW_M_type_backup = NULL;
+
+        while (ROW_NEW_M_type_backup = mysql_fetch_row(RES_NEW_M_type_backup))
+        {
+            unsigned long* L_NEW_M_type_backup = mysql_fetch_lengths(RES_NEW_M_type_backup);
+
+            for (int i = 0; i < 1; i++)
+                sprintf(rM_type_backup, "%.*s", (int)L_NEW_M_type_backup[i], ROW_NEW_M_type_backup[i] ? ROW_NEW_M_type_backup[i] : "NULL");
+        }
+
+        if (mysql_num_rows(RES_NEW_M_type_backup) == 0) // SI REQUETE VIDE
+        {
+            cout << "Metrique du type de backup correspondant inexistant" << endl;
+            cout << qSELECT_M_type_backup << endl;
+            exit(0);
+        }
+
+        mysql_free_result(RES_NEW_M_type_backup);
+    }
+
+    M_type_backup = rM_type_backup;
+
+    mysql_free_result(RES_M_type_backup);
 }
 
-void backup::setM_type_backup(MYSQL& connexion, std::string backupM_type_backup)
+void backup::UP(MYSQL* connexion, char* rreport)
 {
-    char type_backup[300] = "";
-    char qtype_backup[500] = "";
-    char qIN[500] = "";
+    /***** INSERT backup *****/
 
-    //Requête récupération de l'ID de la métrique
-    sprintf(qtype_backup, "SELECT ID_metrics FROM metrics where type_metrics = 'type_backup' AND correspondence_metrics = '%s';", backupM_type_backup.c_str());
+    char qINSERT_backup[500] = "";
 
-    mysql_query(&connexion, qtype_backup);
+    sprintf(qINSERT_backup, "INSERT INTO backup (ID_report, M_type_backup) VALUES ('%s', '%s');", rreport, M_type_backup.c_str());
+    mysql_query(connexion, qINSERT_backup);
 
-    MYSQL_RES* rtype_backup = mysql_use_result(&connexion);
-    MYSQL_ROW row_type_backup;
-
-    while (row_type_backup = mysql_fetch_row(rtype_backup))
+    if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
     {
-        unsigned long* lengths = mysql_fetch_lengths(rtype_backup);
-
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération de l'ID
-            sprintf(type_backup, "%.*s ", (int)lengths[m], row_type_backup[m] ? row_type_backup[m] : "NULL");
-        }
+        fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+        cout << qINSERT_backup << endl;
+        exit(0);
     }
-
-    /***** SI METRIQUE INEXISTANTE *****/
-    if (mysql_num_rows(rtype_backup) == 0)
-    {
-        do
-        {
-            //Requête insertion de la nouvelle métrique
-            sprintf(qIN, "INSERT INTO metrics(type_metrics, correspondence_metrics) VALUES('type_backup', '%s');", backupM_type_backup.c_str());
-
-            mysql_query(&connexion, qIN);
-
-            //Récupératrion de l'ID de la nouvelle métrique
-            while (row_type_backup = mysql_fetch_row(rtype_backup))
-            {
-                unsigned long* lengths = mysql_fetch_lengths(rtype_backup);
-
-                for (int m = 0; m < 1; m++)
-                {
-                    //Récupération du nouvel ID
-                    sprintf(type_backup, "%.*s ", (int)lengths[m], row_type_backup[m] ? row_type_backup[m] : "NULL");
-                }
-            }
-        } while (mysql_num_rows(rtype_backup) != 0); //Jusqu'à ce que la métrique existe
-    }
-    mysql_free_result(rtype_backup);
-
-    M_type_backup = type_backup;
-}
-
-void backup::UP(MYSQL& connexion)
-{
-    char id_backup[300] = "";
-    char qbackup[500] = "";
-    char qIN[500] = "";
-
-    //Vérification de l'existence de la backup
-    sprintf(qbackup, "SELECT ID_backup FROM backup WHERE ID_report = '%s' AND M_type_backup = '%s';", ID_report.c_str(), M_type_backup.c_str());
-
-    mysql_query(&connexion, qbackup);
-
-    MYSQL_RES* rbackup = mysql_use_result(&connexion);
-    MYSQL_ROW row_backup;
-
-    while (row_backup = mysql_fetch_row(rbackup))
-    {
-        unsigned long* lengths = mysql_fetch_lengths(rbackup);
-
-        for (int m = 0; m < 1; m++)
-        {
-            //Récupération des données
-            sprintf(id_backup, "%.*s ", (int)lengths[m], row_backup[m] ? row_backup[m] : "NULL");
-        }
-    }
-
-    /***** SI BACKUP INEXISTANT *****/
-    if (mysql_num_rows(rbackup) == 0)
-    {
-        do
-        {
-            //Requête insertion de la nouvelle backup
-
-            sprintf(qIN, "INSERT INTO backup (ID_report, M_type_backup) VALUES ('%s', '%s');", ID_report.c_str(), M_type_backup.c_str());
-
-            mysql_query(&connexion, qIN);
-        } while (mysql_num_rows(rbackup) != 0); //Jusqu'à ce que la backup existe
-    }
-    mysql_free_result(rbackup);
 }
 
 
 // NETWORK
 
-network::network() : ID_report(""), MAC_address(""), IP_address("")
+network::network() : MAC_address(""), IP_address("")
 {
 }
 
 network::~network()
 {
-}
-
-void network::setID_report(report& Lreport)
-{
-    ID_report = Lreport.getID_report();
 }
 
 void network::setIP_address(std::string networkIP_address)
@@ -1368,7 +1317,7 @@ void network::setMAC_address(std::string networkMAC_address)
     MAC_address = networkMAC_address;
 }
 
-void network::UP(MYSQL& connexion)
+void network::UP(MYSQL* connexion, char* rreport)
 {
     /****** MAC EXTRACTION *****/
 
@@ -1430,39 +1379,18 @@ void network::UP(MYSQL& connexion)
 
     for (int j = 0; j < tailletab; j++)
     {
-        char network[300] = "";
-        char qnetwork[500] = "";
-        char qIN[500] = "";
+        /***** INSERT network *****/
 
-        //Vérification de l'existence du network
-        sprintf(qnetwork, "SELECT ID_network FROM network WHERE ID_report = '%s' AND MAC_address = '%s' AND IP_address = '%s';", ID_report.c_str(), tabMAC[j].c_str(), tabIP[j].c_str());
+        char qINSERT_network[500] = "";
 
-        mysql_query(&connexion, qnetwork);
+        sprintf(qINSERT_network, "INSERT INTO network (ID_report, MAC_address, IP_address) VALUES ('%s', '%s', '%s');", rreport, tabMAC[j].c_str(), tabIP[j].c_str());
+        mysql_query(connexion, qINSERT_network);
 
-        MYSQL_RES* rnetwork = mysql_use_result(&connexion);
-        MYSQL_ROW row_network;
-
-        while (row_network = mysql_fetch_row(rnetwork))
+        if (mysql_errno(connexion) != 0) // SI ERREUR DE REQUETE
         {
-            unsigned long* lengths = mysql_fetch_lengths(rnetwork);
-
-            for (int m = 0; m < 1; m++)
-            {
-                //Récupération des données
-                sprintf(network, "%.*s ", (int)lengths[m], row_network[m] ? row_network[m] : "NULL");
-            }
+            fprintf(stderr, "Erreur de requete: %s\n", mysql_error(connexion));
+            cout << qINSERT_network << endl;
+            exit(0);
         }
-
-        /***** SI NETWORK INEXISTANT *****/
-        if (mysql_num_rows(rnetwork) == 0)
-        {
-            do
-            {
-                //Requête insertion du nouveau network
-                sprintf(qIN, "INSERT INTO network (ID_report, MAC_address, IP_address) VALUES ('%s', '%s', '%s');", ID_report.c_str(), tabMAC[j].c_str(), tabIP[j].c_str());
-                mysql_query(&connexion, qIN);
-            } while (mysql_num_rows(rnetwork) != 0); //Tant que que le network n'existe pas
-        }
-        mysql_free_result(rnetwork);
     }
 }
