@@ -1,4 +1,7 @@
-#include "Header.h"
+#define _CRT_SECURE_NO_WARNINGS
+
+#include <mysql.h>
+#include "Util.h"
 
 using namespace std;
 
@@ -9,10 +12,10 @@ int main()
     MYSQL connexion;
     mysql_init(&connexion);
 
-    if (mysql_real_connect(&connexion, "192.168.1.150", "admin", "root", "vCloud_CSV", 0, NULL, 0))
+    if (mysql_real_connect(&connexion, "localhost", "root", "", "vcloud_csv", 0, NULL, 0))
     {
-        const char* chemin = "C:\\Resourcesv2"; // chemin absolu de recherche de rapports
-        exploration(&connexion, chemin);
+        const char* chemin = "C:\\Users\\marin\\Documents\\CSV manstre\\Historisation_report\\Repartition_CSV"; // chemin absolu de recherche de rapports
+        Util::exploration(&connexion, chemin);
 
         mysql_close(&connexion); //fermeture connection
     }
